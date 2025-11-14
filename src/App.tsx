@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { TripPage } from './pages/TripPage/TripPage'
 import { CabinsPage } from './pages/CabinsPage/CabinsPage'
+import { NotFoundPage } from './pages/NotFoundPage/NotFoundPage'
 
 function App() {
   return (
@@ -8,7 +9,7 @@ function App() {
       <Routes>
         <Route path="/:accessCode" element={<TripPage />} />
         <Route path="/:accessCode/cabins" element={<CabinsPage />} />
-        <Route path="*" element={<div>404 - Trip not found</div>} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Router>
   )

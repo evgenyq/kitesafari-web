@@ -1,0 +1,36 @@
+.container {
+  text-align: center;
+  padding: 96px 24px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.title {
+  font-size: 72px;
+  font-weight: 700;
+  color: #EF4444;
+  margin: 0 0 16px 0;
+}
+
+.subtitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 16px 0;
+}
+
+.text {
+  font-size: 16px;
+  color: #666;
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .title {
+    font-size: 48px;
+  }
+
+  .subtitle {
+    font-size: 20px;
+  }
+}
