@@ -58,5 +58,5 @@ export function getFirstImage(urls: string[] | null): string | null {
 }
 
 export function getPlaceholderImage(): string {
-  return '/placeholder.jpg'
+  return '/placeholder.svg'
 }

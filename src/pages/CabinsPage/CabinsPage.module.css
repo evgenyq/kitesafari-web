@@ -1,0 +1,107 @@
+.header {
+  margin-bottom: 32px;
+}
+
+.backLink {
+  display: inline-block;
+  color: #666;
+  text-decoration: none;
+  margin-bottom: 16px;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.backLink:hover {
+  color: #333;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #333;
+}
+
+.yachtSection {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.yachtName {
+  margin: 0 0 24px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+}
+
+.description {
+  color: #666;
+  line-height: 1.6;
+  margin: 16px 0 24px 0;
+}
+
+.cabinsContainer {
+  margin-top: 32px;
+}
+
+.deckGroup {
+  margin-bottom: 32px;
+}
+
+.deckGroup:last-child {
+  margin-bottom: 0;
+}
+
+.deckName {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.cabinsList {
+  background: #f9fafb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.loading,
+.error,
+.empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: #666;
+}
+
+.error h1 {
+  color: #EF4444;
+  margin-bottom: 16px;
+}
+
+.error a {
+  color: #333;
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .header h1 {
+    font-size: 22px;
+  }
+
+  .yachtSection {
+    padding: 16px;
+  }
+
+  .yachtName {
+    font-size: 20px;
+  }
+
+  .cabinsList {
+    background: transparent;
+  }
+}

@@ -1,0 +1,24 @@
+.container {
+  margin: 24px 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #333;
+}
+
+.image {
+  width: 100%;
+  height: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+@media (max-width: 768px) {
+  .image {
+    border-radius: 4px;
+  }
+}

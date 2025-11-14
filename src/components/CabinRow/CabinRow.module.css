@@ -1,0 +1,47 @@
+.row {
+  display: grid;
+  grid-template-columns: 60px 1fr 120px 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  align-items: center;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.number {
+  font-weight: 600;
+  font-size: 18px;
+  color: #333;
+}
+
+.bedType {
+  color: #666;
+}
+
+.price {
+  font-weight: 600;
+  color: #333;
+}
+
+.status {
+  justify-self: start;
+}
+
+@media (max-width: 768px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border-bottom: none;
+  }
+
+  .number {
+    font-size: 20px;
+  }
+}
