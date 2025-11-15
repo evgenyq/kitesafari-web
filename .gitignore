@@ -27,7 +27,7 @@ dist-ssr
 # Environment variables
 .env
 .env.local
-.env.production
+# .env.production is committed (contains only public ANON_KEY)
 
 # Build output
 build
