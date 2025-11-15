@@ -7,20 +7,27 @@ import styles from './TripsListPage.module.css'
 
 interface TripsListPageProps {
   allowedTripCodes: string[]
+  isAdmin?: boolean
 }
 
-export function TripsListPage({ allowedTripCodes }: TripsListPageProps) {
+export function TripsListPage({ allowedTripCodes, isAdmin = false }: TripsListPageProps) {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchTrips() {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('trips')
           .select('*')
-          .in('access_code', allowedTripCodes)
           .order('start_date', { ascending: false })
+
+        // For non-admin users, filter by allowed trip codes
+        if (!isAdmin && allowedTripCodes.length > 0) {
+          query = query.in('access_code', allowedTripCodes)
+        }
+
+        const { data, error } = await query
 
         if (error) throw error
         setTrips(data || [])
@@ -32,7 +39,7 @@ export function TripsListPage({ allowedTripCodes }: TripsListPageProps) {
     }
 
     fetchTrips()
-  }, [allowedTripCodes])
+  }, [allowedTripCodes, isAdmin])
 
   if (loading) {
     return (

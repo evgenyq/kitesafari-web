@@ -60,17 +60,22 @@ function AppContent() {
           const updatedTrips = [...trips, startParam]
           await setItem(STORAGE_KEY, JSON.stringify(updatedTrips))
           setAllowedTrips(updatedTrips)
+        } else {
+          // Already have access, just update state
+          setAllowedTrips(trips)
         }
 
-        // Navigate to trip page
-        navigate(`/${startParam}`, { replace: true })
+        // Navigate to trip page (keep history for navigation)
+        if (location.pathname === '/' || location.pathname === '/kitesafari-web') {
+          navigate(`/${startParam}`)
+        }
       } catch (error) {
         console.error('Error handling start param:', error)
       }
     }
 
     handleStartParam()
-  }, [startParam, isReady, getItem, setItem, navigate])
+  }, [startParam, isReady, getItem, setItem, navigate, location.pathname])
 
   // Setup BackButton
   useEffect(() => {
@@ -108,8 +113,7 @@ function AppContent() {
         path="/"
         element={
           isAdmin ? (
-            // Admin sees all trips - we'll show a message for now
-            <TripsListPage allowedTripCodes={[]} />
+            <TripsListPage allowedTripCodes={[]} isAdmin={true} />
           ) : allowedTrips.length > 0 ? (
             <TripsListPage allowedTripCodes={allowedTrips} />
           ) : (
