@@ -41,3 +41,6 @@ coverage
 .cache
 .parcel-cache
 .vercel
+
+# Test files
+test-db.mjs

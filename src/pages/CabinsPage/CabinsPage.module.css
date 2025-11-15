@@ -65,6 +65,9 @@
 }
 
 .cabinsList {
+  display: grid;
+  grid-template-columns: 60px auto 120px 1fr;
+  gap: 0;
   background: #f9fafb;
   border-radius: 8px;
   overflow: hidden;
@@ -102,6 +105,7 @@
   }
 
   .cabinsList {
+    display: block;
     background: transparent;
   }
 }
