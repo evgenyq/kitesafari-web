@@ -41,7 +41,7 @@
   font-size: 24px;
   font-weight: 600;
   margin: 0 0 16px 0;
-  color: #333;
+  color: var(--tg-theme-text-color, #333);
 }
 
 .description,
@@ -69,7 +69,7 @@
   display: block;
   font-size: 36px;
   font-weight: 700;
-  color: #333;
+  color: var(--tg-theme-text-color, #333);
   margin-bottom: 8px;
 }
 
@@ -93,8 +93,8 @@
 
 .ctaButton {
   display: inline-block;
-  background: #333;
-  color: white;
+  background: var(--tg-theme-button-color, #333);
+  color: var(--tg-theme-button-text-color, white);
   padding: 16px 32px;
   border-radius: 6px;
   text-decoration: none;

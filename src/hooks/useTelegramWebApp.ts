@@ -14,13 +14,40 @@ export function useTelegramWebApp() {
       setWebApp(tg)
       setIsReady(true)
 
-      // Apply Telegram theme
+      // Apply Telegram theme as CSS variables
+      const root = document.documentElement
       if (tg.themeParams.bg_color) {
-        document.body.style.backgroundColor = tg.themeParams.bg_color
+        root.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color)
       }
+      if (tg.themeParams.text_color) {
+        root.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color)
+      }
+      if (tg.themeParams.hint_color) {
+        root.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color)
+      }
+      if (tg.themeParams.link_color) {
+        root.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color)
+      }
+      if (tg.themeParams.button_color) {
+        root.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color)
+      }
+      if (tg.themeParams.button_text_color) {
+        root.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color)
+      }
+      if (tg.themeParams.secondary_bg_color) {
+        root.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color)
+      }
+
+      // Apply background color to body
+      document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff'
     } else {
-      // Not in Telegram - web version
+      // Not in Telegram - web version with default colors
       setIsReady(true)
+      const root = document.documentElement
+      root.style.setProperty('--tg-theme-bg-color', '#ffffff')
+      root.style.setProperty('--tg-theme-text-color', '#000000')
+      root.style.setProperty('--tg-theme-hint-color', '#999999')
+      root.style.setProperty('--tg-theme-link-color', '#3b82f6')
     }
   }, [])
 

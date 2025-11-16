@@ -8,14 +8,17 @@ interface CabinRowProps {
 }
 
 export function CabinRow({ cabin }: CabinRowProps) {
+  const showGuests = cabin.guests && (cabin.status === 'Booked' || cabin.status === 'Half Available')
+
   return (
     <div className={styles.row}>
       <div className={styles.number}>#{cabin.cabin_number}</div>
       <div className={styles.bedType}>{cabin.bed_type}</div>
       <div className={styles.price}>{formatPrice(cabin.price)}</div>
       <div className={styles.status}>
-        <StatusBadge status={cabin.status} guests={cabin.guests} />
+        <StatusBadge status={cabin.status} />
       </div>
+      {showGuests && <div className={styles.guests}>{cabin.guests}</div>}
     </div>
   )
 }
