@@ -1,7 +1,7 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 12px 16px;
   background: var(--tg-theme-secondary-bg-color, #f9fafb);
 }
@@ -10,31 +10,33 @@
   font-weight: 600;
   font-size: 18px;
   color: var(--tg-theme-text-color, #333);
-  width: 60px;
+  width: 50px;
   flex-shrink: 0;
 }
 
 .bedType {
   color: var(--tg-theme-hint-color, #666);
-  flex: 1;
-  min-width: 100px;
+  width: 80px;
+  flex-shrink: 0;
 }
 
 .price {
   font-weight: 600;
   color: var(--tg-theme-text-color, #333);
-  width: 100px;
+  width: 90px;
   flex-shrink: 0;
 }
 
 .status {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .guests {
   color: var(--tg-theme-hint-color, #666);
   font-size: 14px;
-  margin-left: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
