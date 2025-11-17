@@ -10,26 +10,32 @@ export function formatGuestsInfo(
   booking_type: string,
   second_guest_name?: string
 ): string {
-  // Clean telegram handle (remove @ if present)
-  const clean_handle = telegram_handle.startsWith('@')
-    ? telegram_handle
-    : `@${telegram_handle}`
+  // Clean telegram handle
+  let clean_handle = ''
+  if (telegram_handle && telegram_handle.trim()) {
+    clean_handle = telegram_handle.startsWith('@')
+      ? telegram_handle
+      : `@${telegram_handle}`
+  }
+
+  // Format primary guest (with or without handle)
+  const primary_guest = clean_handle ? `${clean_handle} ${full_name}` : full_name
 
   if (booking_type === 'full_single' || booking_type === 'half') {
     // Single guest
-    return `${clean_handle} ${full_name}`
+    return primary_guest
   }
 
   if (booking_type === 'full_double' || booking_type === 'join') {
     // Two guests
     if (second_guest_name && second_guest_name.trim()) {
-      return `${clean_handle} ${full_name}, ${second_guest_name.trim()}`
+      return `${primary_guest}, ${second_guest_name.trim()}`
     }
     // If no second guest provided, just return primary guest
-    return `${clean_handle} ${full_name}`
+    return primary_guest
   }
 
-  return `${clean_handle} ${full_name}`
+  return primary_guest
 }
 
 /**

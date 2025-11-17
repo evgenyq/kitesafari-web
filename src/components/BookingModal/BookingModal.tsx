@@ -37,6 +37,19 @@ export function BookingModal({ cabin, trip_id, isOpen, onClose }: BookingModalPr
   const [bookingId, setBookingId] = useState<string>('')
   const [totalAmount, setTotalAmount] = useState<number>(0)
 
+  // Update form data when user becomes available
+  useEffect(() => {
+    if (user && isOpen) {
+      setFormData(prev => ({
+        ...prev,
+        guest_full_name: user.first_name && user.last_name
+          ? `${user.first_name} ${user.last_name}`
+          : user.first_name || '',
+        guest_telegram_handle: user.username ? `@${user.username}` : '',
+      }))
+    }
+  }, [user, isOpen])
+
   // Reset form when modal closes
   useEffect(() => {
     if (!isOpen) {
