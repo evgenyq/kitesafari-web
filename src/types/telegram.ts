@@ -89,6 +89,11 @@ export interface TelegramWebApp {
   close: () => void
   sendData: (data: string) => void
   openLink: (url: string, options?: { try_instant_view?: boolean }) => void
+  showPopup: (params: {
+    title?: string
+    message: string
+    buttons?: Array<{ id?: string; type?: 'default' | 'ok' | 'close' | 'cancel' | 'destructive'; text?: string }>
+  }, callback?: (button_id?: string) => void) => void
 }
 
 declare global {
