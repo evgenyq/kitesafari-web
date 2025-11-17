@@ -27,6 +27,37 @@ export function SelectBookingType({
 }: SelectBookingTypeProps) {
   const cabin_price = cabin.price
 
+  // Check if cabin supports half/join bookings based on bed type
+  const supportsHalfBooking = (): boolean => {
+    const bedType = cabin.bed_type.toLowerCase()
+
+    // Double bed (одна двуспальная кровать) - нельзя бронировать половину
+    // Проверяем что это именно "double" без "twin" и без "single"
+    if (bedType === 'double') {
+      return false
+    }
+
+    // Single bed (одна кровать) - нельзя бронировать половину
+    if (bedType === 'single') {
+      return false
+    }
+
+    // Twin, Double+Single и т.д. - можно бронировать половину
+    return cabin.max_guests >= 2
+  }
+
+  // Check if cabin supports 2 guests
+  const supportsDoubleOccupancy = (): boolean => {
+    const bedType = cabin.bed_type.toLowerCase()
+
+    // Single bed - только 1 человек
+    if (bedType === 'single') {
+      return false
+    }
+
+    return cabin.max_guests >= 2
+  }
+
   // Determine which booking types are available
   const options: BookingOption[] = [
     {
@@ -38,19 +69,19 @@ export function SelectBookingType({
     {
       type: 'full_double',
       label: 'Полная каюта (2 человека)',
-      available: cabin.status === 'Available' && cabin.max_guests >= 2,
+      available: cabin.status === 'Available' && supportsDoubleOccupancy(),
       description: getBookingTypeDescription('full_double', cabin_price),
     },
     {
       type: 'half',
       label: 'Половина каюты',
-      available: cabin.status === 'Available' && cabin.max_guests >= 2,
+      available: cabin.status === 'Available' && supportsHalfBooking(),
       description: getBookingTypeDescription('half', cabin_price),
     },
     {
       type: 'join',
       label: 'Присоединиться',
-      available: cabin.status === 'Half Available',
+      available: cabin.status === 'Half Available' && supportsHalfBooking(),
       description: getBookingTypeDescription('join', cabin_price),
     },
   ]
