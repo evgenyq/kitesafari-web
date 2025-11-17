@@ -81,6 +81,12 @@ function AppContent() {
   useEffect(() => {
     if (!webApp || !isInTelegram) return
 
+    // BackButton is available from version 6.1+
+    const version = webApp.version
+    const hasBackButton = version && parseFloat(version) >= 6.1
+
+    if (!hasBackButton) return
+
     const onBackClick = () => {
       if (location.pathname === '/kitesafari-web' || location.pathname === '/') {
         webApp.close()
@@ -89,17 +95,25 @@ function AppContent() {
       }
     }
 
-    webApp.BackButton.onClick(onBackClick)
+    try {
+      webApp.BackButton.onClick(onBackClick)
 
-    // Show BackButton on non-root pages
-    if (location.pathname !== '/kitesafari-web' && location.pathname !== '/') {
-      webApp.BackButton.show()
-    } else {
-      webApp.BackButton.hide()
+      // Show BackButton on non-root pages
+      if (location.pathname !== '/kitesafari-web' && location.pathname !== '/') {
+        webApp.BackButton.show()
+      } else {
+        webApp.BackButton.hide()
+      }
+    } catch (e) {
+      // BackButton call failed, ignore
     }
 
     return () => {
-      webApp.BackButton.offClick(onBackClick)
+      try {
+        webApp.BackButton?.offClick(onBackClick)
+      } catch (e) {
+        // Ignore cleanup errors
+      }
     }
   }, [webApp, isInTelegram, location.pathname, navigate])
 

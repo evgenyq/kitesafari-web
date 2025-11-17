@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { TelegramWebApp } from '../types/telegram'
+
+// Check if a feature is supported based on version
+function isVersionAtLeast(version: string, minVersion: string): boolean {
+  const parseVersion = (v: string) => {
+    const parts = v.split('.').map(Number)
+    return parts[0] * 10000 + (parts[1] || 0) * 100 + (parts[2] || 0)
+  }
+  return parseVersion(version) >= parseVersion(minVersion)
+}
 
 export function useTelegramWebApp() {
   const [webApp, setWebApp] = useState<TelegramWebApp | null>(null)
@@ -64,10 +73,13 @@ export function useTelegramWebApp() {
 export function useCloudStorage() {
   const { webApp, isInTelegram } = useTelegramWebApp()
 
-  const setItem = (key: string, value: string): Promise<void> => {
+  // CloudStorage is available from version 6.9+
+  const hasCloudStorage = webApp && isVersionAtLeast(webApp.version, '6.9')
+
+  const setItem = useCallback((key: string, value: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      if (!isInTelegram || !webApp) {
-        // Fallback to localStorage
+      // Use localStorage if not in Telegram or CloudStorage not supported
+      if (!isInTelegram || !hasCloudStorage) {
         try {
           localStorage.setItem(key, value)
           resolve()
@@ -77,17 +89,23 @@ export function useCloudStorage() {
         return
       }
 
-      webApp.CloudStorage.setItem(key, value, (error) => {
-        if (error) reject(new Error(error))
-        else resolve()
-      })
+      try {
+        webApp!.CloudStorage.setItem(key, value, (error) => {
+          if (error) reject(new Error(error))
+          else resolve()
+        })
+      } catch (e) {
+        // CloudStorage call failed, fallback to localStorage
+        localStorage.setItem(key, value)
+        resolve()
+      }
     })
-  }
+  }, [isInTelegram, webApp, hasCloudStorage])
 
-  const getItem = (key: string): Promise<string | null> => {
+  const getItem = useCallback((key: string): Promise<string | null> => {
     return new Promise((resolve, reject) => {
-      if (!isInTelegram || !webApp) {
-        // Fallback to localStorage
+      // Use localStorage if not in Telegram or CloudStorage not supported
+      if (!isInTelegram || !hasCloudStorage) {
         try {
           resolve(localStorage.getItem(key))
         } catch (e) {
@@ -96,17 +114,22 @@ export function useCloudStorage() {
         return
       }
 
-      webApp.CloudStorage.getItem(key, (error, value) => {
-        if (error) reject(new Error(error))
-        else resolve(value)
-      })
+      try {
+        webApp!.CloudStorage.getItem(key, (error, value) => {
+          if (error) reject(new Error(error))
+          else resolve(value)
+        })
+      } catch (e) {
+        // CloudStorage call failed, fallback to localStorage
+        resolve(localStorage.getItem(key))
+      }
     })
-  }
+  }, [isInTelegram, webApp, hasCloudStorage])
 
-  const getItems = (keys: string[]): Promise<Record<string, string>> => {
+  const getItems = useCallback((keys: string[]): Promise<Record<string, string>> => {
     return new Promise((resolve, reject) => {
-      if (!isInTelegram || !webApp) {
-        // Fallback to localStorage
+      // Use localStorage if not in Telegram or CloudStorage not supported
+      if (!isInTelegram || !hasCloudStorage) {
         try {
           const result: Record<string, string> = {}
           keys.forEach(key => {
@@ -120,16 +143,27 @@ export function useCloudStorage() {
         return
       }
 
-      webApp.CloudStorage.getItems(keys, (error, values) => {
-        if (error) reject(new Error(error))
-        else resolve(values || {})
-      })
+      try {
+        webApp!.CloudStorage.getItems(keys, (error, values) => {
+          if (error) reject(new Error(error))
+          else resolve(values || {})
+        })
+      } catch (e) {
+        // CloudStorage call failed, fallback to localStorage
+        const result: Record<string, string> = {}
+        keys.forEach(key => {
+          const value = localStorage.getItem(key)
+          if (value !== null) result[key] = value
+        })
+        resolve(result)
+      }
     })
-  }
+  }, [isInTelegram, webApp, hasCloudStorage])
 
-  const removeItem = (key: string): Promise<void> => {
+  const removeItem = useCallback((key: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      if (!isInTelegram || !webApp) {
+      // Use localStorage if not in Telegram or CloudStorage not supported
+      if (!isInTelegram || !hasCloudStorage) {
         try {
           localStorage.removeItem(key)
           resolve()
@@ -139,12 +173,18 @@ export function useCloudStorage() {
         return
       }
 
-      webApp.CloudStorage.removeItem(key, (error) => {
-        if (error) reject(new Error(error))
-        else resolve()
-      })
+      try {
+        webApp!.CloudStorage.removeItem(key, (error) => {
+          if (error) reject(new Error(error))
+          else resolve()
+        })
+      } catch (e) {
+        // CloudStorage call failed, fallback to localStorage
+        localStorage.removeItem(key)
+        resolve()
+      }
     })
-  }
+  }, [isInTelegram, webApp, hasCloudStorage])
 
   return {
     setItem,
