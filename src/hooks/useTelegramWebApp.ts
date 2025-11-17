@@ -25,30 +25,24 @@ export function useTelegramWebApp() {
 
       // Apply Telegram theme as CSS variables
       const root = document.documentElement
-      if (tg.themeParams.bg_color) {
-        root.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color)
-      }
-      if (tg.themeParams.text_color) {
-        root.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color)
-      }
-      if (tg.themeParams.hint_color) {
-        root.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color)
-      }
-      if (tg.themeParams.link_color) {
-        root.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color)
-      }
-      if (tg.themeParams.button_color) {
-        root.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color)
-      }
-      if (tg.themeParams.button_text_color) {
-        root.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color)
-      }
-      if (tg.themeParams.secondary_bg_color) {
-        root.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color)
-      }
+      const isDark = tg.colorScheme === 'dark'
+
+      // Set theme colors with smart fallbacks for dark mode
+      root.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || (isDark ? '#212121' : '#ffffff'))
+      root.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || (isDark ? '#ffffff' : '#000000'))
+      root.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || (isDark ? '#aaaaaa' : '#999999'))
+      root.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color || '#3b82f6')
+      root.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || (isDark ? '#8774e1' : '#3b82f6'))
+      root.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff')
+
+      // secondary_bg_color is critical for cards - ensure it exists
+      root.style.setProperty(
+        '--tg-theme-secondary-bg-color',
+        tg.themeParams.secondary_bg_color || (isDark ? '#181818' : '#f4f4f5')
+      )
 
       // Apply background color to body
-      document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff'
+      document.body.style.backgroundColor = tg.themeParams.bg_color || (isDark ? '#212121' : '#ffffff')
     } else {
       // Not in Telegram - web version with default colors
       setIsReady(true)

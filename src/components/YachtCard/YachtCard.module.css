@@ -1,6 +1,6 @@
 .card {
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--tg-theme-secondary-bg-color, white);
+  border: 1px solid var(--tg-theme-hint-color, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 24px;
@@ -26,11 +26,11 @@
   margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #333;
+  color: var(--tg-theme-text-color, #333);
 }
 
 .description {
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   margin: 0 0 12px 0;
   line-height: 1.6;
 }

@@ -22,15 +22,15 @@
 
 .text {
   font-size: 16px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   line-height: 1.5;
   margin: 0 0 32px 0;
   max-width: 400px;
 }
 
 .contacts {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--tg-theme-secondary-bg-color, #f9fafb);
+  border: 1px solid var(--tg-theme-hint-color, #e5e7eb);
   border-radius: 8px;
   padding: 16px 24px;
 }
@@ -38,13 +38,13 @@
 .contactsTitle {
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--tg-theme-text-color, #333);
   margin: 0 0 8px 0;
 }
 
 .contact {
   font-size: 14px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   margin: 4px 0;
 }
 

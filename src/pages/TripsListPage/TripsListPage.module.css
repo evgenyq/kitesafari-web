@@ -16,8 +16,8 @@
 }
 
 .tripCard {
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--tg-theme-secondary-bg-color, white);
+  border: 1px solid var(--tg-theme-hint-color, #e5e7eb);
   border-radius: 12px;
   padding: 20px;
   text-decoration: none;
@@ -25,7 +25,7 @@
 }
 
 .tripCard:hover {
-  border-color: #3b82f6;
+  border-color: var(--tg-theme-link-color, #3b82f6);
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
   transform: translateY(-2px);
 }
@@ -39,13 +39,13 @@
 
 .tripDates {
   font-size: 14px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   margin: 0 0 12px 0;
 }
 
 .tripDescription {
   font-size: 14px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   line-height: 1.5;
   margin: 0;
   display: -webkit-box;
@@ -58,7 +58,7 @@
 .empty {
   text-align: center;
   padding: 48px 24px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
 }
 
 @media (max-width: 768px) {

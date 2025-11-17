@@ -4,7 +4,7 @@
 
 .backLink {
   display: inline-block;
-  color: #666;
+  color: var(--tg-theme-link-color, #666);
   text-decoration: none;
   margin-bottom: 16px;
   font-size: 14px;
@@ -12,7 +12,7 @@
 }
 
 .backLink:hover {
-  color: #333;
+  color: var(--tg-theme-text-color, #333);
 }
 
 .header h1 {
@@ -23,8 +23,8 @@
 }
 
 .yachtSection {
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--tg-theme-secondary-bg-color, white);
+  border: 1px solid var(--tg-theme-hint-color, #e5e7eb);
   border-radius: 8px;
   padding: 24px;
   margin-bottom: 32px;
@@ -38,7 +38,7 @@
 }
 
 .description {
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
   line-height: 1.6;
   margin: 16px 0 24px 0;
 }
@@ -68,7 +68,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  background: #e5e7eb;
+  background: var(--tg-theme-hint-color, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -84,7 +84,7 @@
 .empty {
   text-align: center;
   padding: 48px 24px;
-  color: #666;
+  color: var(--tg-theme-hint-color, #666);
 }
 
 .error h1 {
@@ -93,7 +93,7 @@
 }
 
 .error a {
-  color: #333;
+  color: var(--tg-theme-link-color, #333);
   text-decoration: underline;
 }
 
