@@ -1,17 +1,33 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Layout } from '../../components/Layout/Layout'
 import { DeckPlan } from '../../components/DeckPlan/DeckPlan'
 import { PhotoGallery } from '../../components/PhotoGallery/PhotoGallery'
 import { CabinRow } from '../../components/CabinRow/CabinRow'
+import { BookingModal } from '../../components/BookingModal'
 import { useTrip } from '../../hooks/useTrip'
 import { useCabins } from '../../hooks/useCabins'
 import { getFirstImage } from '../../lib/utils'
+import type { Cabin } from '../../types'
 import styles from './CabinsPage.module.css'
 
 export function CabinsPage() {
   const { accessCode } = useParams<{ accessCode: string }>()
   const { data: trip, loading: tripLoading } = useTrip(accessCode)
   const { data: cabinsByYacht, loading: cabinsLoading, error: cabinsError } = useCabins(trip?.id)
+
+  const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  const handleBookClick = (cabin: Cabin) => {
+    setSelectedCabin(cabin)
+    setIsModalOpen(true)
+  }
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedCabin(null)
+  }
 
   if (tripLoading || cabinsLoading) {
     return (
@@ -68,7 +84,7 @@ export function CabinsPage() {
                       <h3 className={styles.deckName}>{deck}</h3>
                       <div className={styles.cabinsList}>
                         {cabins.map((cabin) => (
-                          <CabinRow key={cabin.id} cabin={cabin} />
+                          <CabinRow key={cabin.id} cabin={cabin} onBookClick={handleBookClick} />
                         ))}
                       </div>
                     </div>
@@ -79,6 +95,15 @@ export function CabinsPage() {
         })
       ) : (
         <p className={styles.empty}>Каюты не найдены</p>
+      )}
+
+      {selectedCabin && trip && (
+        <BookingModal
+          cabin={selectedCabin}
+          trip_id={trip.id}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+        />
       )}
     </Layout>
   )

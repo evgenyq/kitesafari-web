@@ -1,0 +1,11 @@
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tg-theme-hint-color, #666);
+  vertical-align: middle;
+}
+
+.icon svg {
+  flex-shrink: 0;
+}

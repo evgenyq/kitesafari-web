@@ -1,0 +1,134 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--tg-theme-hint-color, #666);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.required {
+  color: #ef4444;
+}
+
+.input,
+.textarea {
+  padding: 12px 16px;
+  border: 2px solid var(--tg-theme-hint-color, #e5e7eb);
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--tg-theme-text-color, #000);
+  background: var(--tg-theme-bg-color, white);
+  transition: border-color 0.2s;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--tg-theme-button-color, #3b82f6);
+}
+
+.input.inputError,
+.textarea.inputError {
+  border-color: #ef4444;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tg-theme-hint-color, #999);
+}
+
+.error {
+  font-size: 13px;
+  color: #ef4444;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.buttonPrimary,
+.buttonSecondary {
+  flex: 1;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.buttonPrimary {
+  background: var(--tg-theme-button-color, #3b82f6);
+  color: var(--tg-theme-button-text-color, white);
+}
+
+.buttonPrimary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.buttonSecondary {
+  background: transparent;
+  color: var(--tg-theme-text-color, #000);
+  border: 2px solid var(--tg-theme-hint-color, #e5e7eb);
+}
+
+.buttonSecondary:hover {
+  background: var(--tg-theme-secondary-bg-color, #f4f4f5);
+}
+
+@media (max-width: 768px) {
+  .sectionTitle {
+    font-size: 16px;
+  }
+
+  .input,
+  .textarea {
+    font-size: 16px; /* Prevent iOS zoom on focus */
+  }
+}

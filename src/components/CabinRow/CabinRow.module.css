@@ -15,9 +15,16 @@
 }
 
 .bedType {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--tg-theme-hint-color, #666);
-  width: 80px;
+  width: 120px;
   flex-shrink: 0;
+}
+
+.bedTypeText {
+  white-space: nowrap;
 }
 
 .price {
@@ -37,6 +44,29 @@
   font-size: 14px;
   flex: 1;
   min-width: 0;
+}
+
+.bookButton {
+  padding: 8px 16px;
+  background: var(--tg-theme-button-color, #3b82f6);
+  color: var(--tg-theme-button-text-color, white);
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.bookButton:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.bookButton:active {
+  transform: translateY(0);
 }
 
 @media (max-width: 768px) {
@@ -72,5 +102,11 @@
     width: 100%;
     flex-basis: 100%;
     margin-left: 0;
+  }
+
+  .bookButton {
+    width: 100%;
+    flex-basis: 100%;
+    margin-top: 8px;
   }
 }

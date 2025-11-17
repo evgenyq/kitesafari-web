@@ -1,0 +1,164 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.iconContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.successIcon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #10b981;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: bold;
+  animation: scaleIn 0.5s ease-out;
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.message {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--tg-theme-hint-color, #666);
+}
+
+.details {
+  background: var(--tg-theme-secondary-bg-color, #f9fafb);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+
+.detailItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.detailLabel {
+  font-size: 14px;
+  color: var(--tg-theme-hint-color, #666);
+}
+
+.detailValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-theme-text-color, #000);
+  text-align: right;
+}
+
+.detailValue.amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--tg-theme-button-color, #3b82f6);
+}
+
+.notice {
+  background: var(--tg-theme-secondary-bg-color, #eff6ff);
+  border: 1px solid var(--tg-theme-link-color, #93c5fd);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: left;
+}
+
+.noticeTitle {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.noticeList {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.noticeList li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.actions {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.buttonPrimary {
+  width: 100%;
+  padding: 14px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  background: var(--tg-theme-button-color, #3b82f6);
+  color: var(--tg-theme-button-text-color, white);
+}
+
+.buttonPrimary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .successIcon {
+    width: 64px;
+    height: 64px;
+    font-size: 40px;
+  }
+
+  .title {
+    font-size: 20px;
+  }
+
+  .message {
+    font-size: 15px;
+  }
+}
