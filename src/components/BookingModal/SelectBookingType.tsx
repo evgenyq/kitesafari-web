@@ -29,11 +29,14 @@ export function SelectBookingType({
 
   // Check if cabin supports half/join bookings based on bed type
   const supportsHalfBooking = (): boolean => {
-    const bedType = cabin.bed_type.toLowerCase()
+    const bedType = cabin.bed_type.toLowerCase().trim()
+
+    console.log('[DEBUG] Cabin bed_type:', cabin.bed_type, '| normalized:', bedType)
 
     // Double bed (одна двуспальная кровать) - нельзя бронировать половину
     // Проверяем что это именно "double" без "twin" и без "single"
     if (bedType === 'double') {
+      console.log('[DEBUG] Blocking half booking for Double bed')
       return false
     }
 
