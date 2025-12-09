@@ -30,6 +30,9 @@ export function useYachts(tripId: string | undefined): UseDataResult<YachtWithSt
         const yachtsMap = new Map<string, YachtWithStats>()
 
         cabins?.forEach((cabin: any) => {
+          // Skip STAFF cabins
+          if (cabin.status === 'STAFF') return
+
           const yacht = cabin.yachts
           const yachtId = yacht.id
 
