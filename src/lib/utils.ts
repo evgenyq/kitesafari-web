@@ -10,7 +10,30 @@ export function formatDate(dateString: string): string {
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {
-  return `${formatDate(startDate)} - ${formatDate(endDate)}`
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+
+  const startDay = start.getDate()
+  const endDay = end.getDate()
+
+  const startMonth = start.toLocaleDateString('ru-RU', { month: 'long' })
+  const endMonth = end.toLocaleDateString('ru-RU', { month: 'long' })
+
+  const startYear = start.getFullYear()
+  const endYear = end.getFullYear()
+
+  // Один месяц и год: "2-9 мая 2026"
+  if (start.getMonth() === end.getMonth() && startYear === endYear) {
+    return `${startDay}-${endDay} ${startMonth} ${startYear}`
+  }
+
+  // Разные месяцы, один год: "29 октября - 4 ноября 2027"
+  if (startYear === endYear) {
+    return `${startDay} ${startMonth} - ${endDay} ${endMonth} ${startYear}`
+  }
+
+  // Разные годы: "29 декабря 2026 - 4 января 2027"
+  return `${startDay} ${startMonth} ${startYear} - ${endDay} ${endMonth} ${endYear}`
 }
 
 // Cabin status helpers
