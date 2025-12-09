@@ -15,6 +15,21 @@ export interface Trip {
   updated_at: string
 }
 
+// Cabin map types for interactive deck plan
+export interface CabinMapCoords {
+  cabin_number: number
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+export interface CabinMap {
+  imageWidth: number
+  imageHeight: number
+  cabins: CabinMapCoords[]
+}
+
 export interface Yacht {
   id: string
   notion_id: string
@@ -23,6 +38,7 @@ export interface Yacht {
   photos_urls: string[] | null
   deck_plan_urls: string[] | null
   specifications: Record<string, any> | null
+  cabin_map: CabinMap | null
   created_at: string
   updated_at: string
 }
@@ -54,6 +70,10 @@ export interface YachtWithStats extends Yacht {
 
 export interface CabinWithYacht extends Cabin {
   yacht: Yacht
+}
+
+export interface CabinWithCoords extends Cabin {
+  coords: CabinMapCoords
 }
 
 // Grouped data types

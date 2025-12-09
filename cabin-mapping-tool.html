@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cabin Mapping Tool - Kite Safari</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 20px;
+    }
+
+    .panel {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    h2 {
+      margin: 20px 0 10px;
+      font-size: 18px;
+      color: #555;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #666;
+    }
+
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+      font-family: monospace;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #3B82F6;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2563EB;
+    }
+
+    .btn-success {
+      background: #22C55E;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #16A34A;
+    }
+
+    .btn-danger {
+      background: #EF4444;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #DC2626;
+    }
+
+    .btn-secondary {
+      background: #6B7280;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #4B5563;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .canvas-container {
+      position: relative;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f9fafb;
+      cursor: crosshair;
+    }
+
+    .canvas-container.editing {
+      cursor: move;
+    }
+
+    #deckPlanCanvas {
+      display: block;
+      max-width: 100%;
+    }
+
+    .cabin-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+    }
+
+    .cabin-item {
+      padding: 8px;
+      margin-bottom: 8px;
+      background: #f9fafb;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cabin-item.completed {
+      background: #D1FAE5;
+      border-left: 3px solid #22C55E;
+    }
+
+    .cabin-number {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .cabin-coords {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+    }
+
+    .delete-btn {
+      padding: 4px 8px;
+      font-size: 12px;
+      background: #EF4444;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .delete-btn:hover {
+      background: #DC2626;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 15px 0;
+      font-size: 14px;
+    }
+
+    .status.info {
+      background: #DBEAFE;
+      color: #1E40AF;
+      border-left: 4px solid #3B82F6;
+    }
+
+    .status.success {
+      background: #D1FAE5;
+      color: #065F46;
+      border-left: 4px solid #22C55E;
+    }
+
+    .status.warning {
+      background: #FEF3C7;
+      color: #92400E;
+      border-left: 4px solid #EAB308;
+    }
+
+    .json-output {
+      font-family: monospace;
+      font-size: 12px;
+      background: #1F2937;
+      color: #F9FAFB;
+      padding: 15px;
+      border-radius: 6px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .help-text {
+      font-size: 13px;
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Left Panel: Canvas -->
+    <div class="panel">
+      <h1>🗺️ Cabin Mapping Tool</h1>
+
+      <div class="input-group">
+        <label for="imageUrl">Deck Plan Image URL:</label>
+        <input type="text" id="imageUrl" placeholder="https://zmbiiywazaytltemzzvc.supabase.co/storage/...">
+        <p class="help-text">Вставь URL deck plan изображения из Supabase Storage</p>
+      </div>
+
+      <div class="input-group">
+        <label for="cabinNumbers">Cabin Numbers (comma-separated):</label>
+        <input type="text" id="cabinNumbers" placeholder="1,2,3,13,17,21">
+        <p class="help-text">Введи номера всех кают через запятую</p>
+      </div>
+
+      <div class="button-row">
+        <button class="btn-primary" onclick="loadImage()">Load Image</button>
+        <button class="btn-secondary" onclick="toggleMode()">Mode: <span id="modeText">Draw</span></button>
+        <button class="btn-danger" onclick="reset()">Reset</button>
+      </div>
+
+      <div id="status" class="status info">
+        📌 Загрузи изображение и введи номера кают для начала
+      </div>
+
+      <div class="canvas-container" id="canvasContainer">
+        <canvas id="deckPlanCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Right Panel: Controls & Output -->
+    <div class="panel">
+      <h2>Mapped Cabins (<span id="mappedCount">0</span>/<span id="totalCount">0</span>)</h2>
+
+      <div class="cabin-list" id="cabinList">
+        <p style="color: #999; text-align: center;">No cabins mapped yet</p>
+      </div>
+
+      <h2>Output JSON</h2>
+
+      <div class="button-row">
+        <button class="btn-success" onclick="generateJSON()">Generate JSON</button>
+        <button class="btn-primary" onclick="copyToClipboard()">Copy to Clipboard</button>
+      </div>
+
+      <div class="json-output" id="jsonOutput">
+        // JSON will appear here after mapping
+      </div>
+
+      <h2>Instructions</h2>
+      <div class="status info">
+        <strong>Draw Mode:</strong><br>
+        1. Click and drag to draw rectangle<br>
+        2. Release to assign to next cabin<br><br>
+        <strong>Edit Mode:</strong><br>
+        1. Click rectangle to delete it<br>
+        2. Remap cabin if needed
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let image = null
+    let cabinNumbers = []
+    let mappedCabins = []
+    let currentCabinIndex = 0
+    let mode = 'draw'  // 'draw' or 'edit'
+
+    // Drawing state
+    let isDrawing = false
+    let startX = 0
+    let startY = 0
+    let currentRect = null
+
+    // Canvas
+    const canvas = document.getElementById('deckPlanCanvas')
+    const ctx = canvas.getContext('2d')
+    const canvasContainer = document.getElementById('canvasContainer')
+
+    // Load image
+    function loadImage() {
+      const url = document.getElementById('imageUrl').value.trim()
+      const numbersInput = document.getElementById('cabinNumbers').value.trim()
+
+      if (!url) {
+        setStatus('warning', '⚠️ Введи URL изображения')
+        return
+      }
+
+      if (!numbersInput) {
+        setStatus('warning', '⚠️ Введи номера кают')
+        return
+      }
+
+      // Parse cabin numbers
+      cabinNumbers = numbersInput.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n))
+
+      if (cabinNumbers.length === 0) {
+        setStatus('warning', '⚠️ Неверный формат номеров кают')
+        return
+      }
+
+      document.getElementById('totalCount').textContent = cabinNumbers.length
+
+      // Load image
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+
+      img.onload = function() {
+        image = img
+        canvas.width = img.width
+        canvas.height = img.height
+
+        drawCanvas()
+        setStatus('success', `✅ Изображение загружено (${img.width}x${img.height}). Начинай рисовать прямоугольники!`)
+      }
+
+      img.onerror = function() {
+        setStatus('warning', '❌ Не удалось загрузить изображение. Проверь URL и CORS.')
+      }
+
+      img.src = url
+    }
+
+    // Draw canvas
+    function drawCanvas() {
+      if (!image) return
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(image, 0, 0)
+
+      // Draw mapped rectangles
+      mappedCabins.forEach((cabin, index) => {
+        const color = cabin.cabin_number === cabinNumbers[currentCabinIndex] ? '#3B82F6' : '#22C55E'
+
+        ctx.strokeStyle = color
+        ctx.lineWidth = 3
+        ctx.strokeRect(cabin.left, cabin.top, cabin.right - cabin.left, cabin.bottom - cabin.top)
+
+        // Draw cabin number
+        ctx.fillStyle = color
+        ctx.font = 'bold 16px Arial'
+        ctx.fillText(`#${cabin.cabin_number}`, cabin.left + 5, cabin.top + 20)
+      })
+
+      // Draw current drawing rectangle
+      if (isDrawing && currentRect) {
+        ctx.strokeStyle = '#EF4444'
+        ctx.lineWidth = 2
+        ctx.setLineDash([5, 5])
+        ctx.strokeRect(currentRect.left, currentRect.top, currentRect.right - currentRect.left, currentRect.bottom - currentRect.top)
+        ctx.setLineDash([])
+      }
+    }
+
+    // Get canvas coordinates accounting for scale
+    function getCanvasCoordinates(e) {
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+
+      const x = (e.clientX - rect.left) * scaleX
+      const y = (e.clientY - rect.top) * scaleY
+
+      return { x, y }
+    }
+
+    // Mouse events
+    canvas.addEventListener('mousedown', (e) => {
+      if (mode === 'draw' && currentCabinIndex < cabinNumbers.length) {
+        const coords = getCanvasCoordinates(e)
+        startX = coords.x
+        startY = coords.y
+        isDrawing = true
+      } else if (mode === 'edit') {
+        const coords = getCanvasCoordinates(e)
+
+        // Check if clicked on a rectangle
+        const clickedIndex = mappedCabins.findIndex(cabin =>
+          coords.x >= cabin.left && coords.x <= cabin.right && coords.y >= cabin.top && coords.y <= cabin.bottom
+        )
+
+        if (clickedIndex !== -1) {
+          const deleted = mappedCabins.splice(clickedIndex, 1)[0]
+          currentCabinIndex = cabinNumbers.indexOf(deleted.cabin_number)
+          updateCabinList()
+          drawCanvas()
+          setStatus('info', `🗑️ Удалена каюта #${deleted.cabin_number}. Нарисуй заново.`)
+        }
+      }
+    })
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (isDrawing && mode === 'draw') {
+        const coords = getCanvasCoordinates(e)
+
+        currentRect = {
+          left: Math.min(startX, coords.x),
+          top: Math.min(startY, coords.y),
+          right: Math.max(startX, coords.x),
+          bottom: Math.max(startY, coords.y)
+        }
+
+        drawCanvas()
+      }
+    })
+
+    canvas.addEventListener('mouseup', (e) => {
+      if (isDrawing && mode === 'draw' && currentRect) {
+        const cabinNumber = cabinNumbers[currentCabinIndex]
+
+        mappedCabins.push({
+          cabin_number: cabinNumber,
+          left: Math.round(currentRect.left),
+          top: Math.round(currentRect.top),
+          right: Math.round(currentRect.right),
+          bottom: Math.round(currentRect.bottom)
+        })
+
+        currentCabinIndex++
+        updateCabinList()
+
+        if (currentCabinIndex >= cabinNumbers.length) {
+          setStatus('success', `🎉 Все каюты замаплены! Теперь жми "Generate JSON"`)
+        } else {
+          setStatus('info', `✏️ Следующая каюта: #${cabinNumbers[currentCabinIndex]}`)
+        }
+
+        isDrawing = false
+        currentRect = null
+        drawCanvas()
+      }
+    })
+
+    // Toggle mode
+    function toggleMode() {
+      mode = mode === 'draw' ? 'edit' : 'draw'
+      document.getElementById('modeText').textContent = mode === 'draw' ? 'Draw' : 'Edit'
+      canvasContainer.className = mode === 'edit' ? 'canvas-container editing' : 'canvas-container'
+      setStatus('info', mode === 'draw' ? '✏️ Draw Mode: рисуй прямоугольники' : '✂️ Edit Mode: кликай на прямоугольники чтобы удалить')
+    }
+
+    // Update cabin list
+    function updateCabinList() {
+      const list = document.getElementById('cabinList')
+      document.getElementById('mappedCount').textContent = mappedCabins.length
+
+      if (mappedCabins.length === 0) {
+        list.innerHTML = '<p style="color: #999; text-align: center;">No cabins mapped yet</p>'
+        return
+      }
+
+      list.innerHTML = mappedCabins.map((cabin, index) => `
+        <div class="cabin-item completed">
+          <div>
+            <span class="cabin-number">Cabin #${cabin.cabin_number}</span><br>
+            <span class="cabin-coords">${cabin.left},${cabin.top} → ${cabin.right},${cabin.bottom}</span>
+          </div>
+          <button class="delete-btn" onclick="deleteCabin(${index})">Delete</button>
+        </div>
+      `).join('')
+    }
+
+    // Delete cabin
+    function deleteCabin(index) {
+      const deleted = mappedCabins.splice(index, 1)[0]
+      currentCabinIndex = Math.min(currentCabinIndex, cabinNumbers.indexOf(deleted.cabin_number))
+      updateCabinList()
+      drawCanvas()
+      setStatus('info', `🗑️ Удалена каюта #${deleted.cabin_number}`)
+    }
+
+    // Generate JSON
+    function generateJSON() {
+      if (!image) {
+        setStatus('warning', '⚠️ Сначала загрузи изображение')
+        return
+      }
+
+      if (mappedCabins.length === 0) {
+        setStatus('warning', '⚠️ Нет замапленных кают')
+        return
+      }
+
+      const output = {
+        imageWidth: image.width,
+        imageHeight: image.height,
+        cabins: mappedCabins.sort((a, b) => a.cabin_number - b.cabin_number)
+      }
+
+      const json = JSON.stringify(output, null, 2)
+      document.getElementById('jsonOutput').textContent = json
+
+      setStatus('success', `✅ JSON сгенерирован! Скопируй и вставь в Supabase`)
+    }
+
+    // Copy to clipboard
+    function copyToClipboard() {
+      const json = document.getElementById('jsonOutput').textContent
+
+      if (json.includes('// JSON will appear here')) {
+        setStatus('warning', '⚠️ Сначала сгенерируй JSON')
+        return
+      }
+
+      navigator.clipboard.writeText(json).then(() => {
+        setStatus('success', '📋 JSON скопирован в clipboard!')
+      }).catch(() => {
+        setStatus('warning', '❌ Не удалось скопировать')
+      })
+    }
+
+    // Reset
+    function reset() {
+      if (!confirm('Сбросить все данные?')) return
+
+      mappedCabins = []
+      currentCabinIndex = 0
+      image = null
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      document.getElementById('imageUrl').value = ''
+      document.getElementById('cabinNumbers').value = ''
+      document.getElementById('jsonOutput').textContent = '// JSON will appear here after mapping'
+
+      updateCabinList()
+      setStatus('info', '🔄 Сброшено. Начни заново.')
+    }
+
+    // Set status message
+    function setStatus(type, message) {
+      const statusEl = document.getElementById('status')
+      statusEl.className = `status ${type}`
+      statusEl.textContent = message
+    }
+  </script>
+</body>
+</html>

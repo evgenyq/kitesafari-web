@@ -1,0 +1,60 @@
+.marker {
+  position: absolute;
+  border: 2px solid;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+
+.marker:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-width: 3px;
+  z-index: 10;
+}
+
+.marker.available {
+  border-color: #22C55E;
+}
+
+.marker.available:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+.marker.booked {
+  border-color: #EF4444;
+  cursor: default;
+}
+
+.marker.booked:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-width: 2px;
+}
+
+.marker.half {
+  border-color: #EAB308;
+}
+
+.marker.half:hover {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: 700;
+  font-size: 14px;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .number {
+    font-size: 12px;
+  }
+}

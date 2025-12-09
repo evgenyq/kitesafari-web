@@ -5,10 +5,11 @@ import { DeckPlan } from '../../components/DeckPlan/DeckPlan'
 import { PhotoGallery } from '../../components/PhotoGallery/PhotoGallery'
 import { CabinRow } from '../../components/CabinRow/CabinRow'
 import { BookingModal } from '../../components/BookingModal'
+import { InteractiveDeckPlan } from '../../components/InteractiveDeckPlan'
 import { useTrip } from '../../hooks/useTrip'
 import { useCabins } from '../../hooks/useCabins'
 import { getFirstImage } from '../../lib/utils'
-import type { Cabin } from '../../types'
+import type { Cabin, Yacht } from '../../types'
 import styles from './CabinsPage.module.css'
 
 export function CabinsPage() {
@@ -16,17 +17,45 @@ export function CabinsPage() {
   const { data: trip, loading: tripLoading } = useTrip(accessCode)
   const { data: cabinsByYacht, loading: cabinsLoading, error: cabinsError } = useCabins(trip?.id)
 
-  const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  // Interactive deck plan state
+  const [interactivePlan, setInteractivePlan] = useState<{
+    isOpen: boolean
+    yacht: Yacht | null
+    cabins: Cabin[]
+  }>({ isOpen: false, yacht: null, cabins: [] })
+
+  // Booking modal state
+  const [bookingContext, setBookingContext] = useState<{
+    cabin: Cabin | null
+    isOpen: boolean
+    returnToMap: boolean
+  }>({ cabin: null, isOpen: false, returnToMap: false })
 
   const handleBookClick = (cabin: Cabin) => {
-    setSelectedCabin(cabin)
-    setIsModalOpen(true)
+    setBookingContext({ cabin, isOpen: true, returnToMap: false })
   }
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
-    setSelectedCabin(null)
+  const handleOpenInteractivePlan = (yacht: Yacht, cabins: Cabin[]) => {
+    setInteractivePlan({ isOpen: true, yacht, cabins })
+  }
+
+  const handleCloseInteractivePlan = () => {
+    setInteractivePlan({ isOpen: false, yacht: null, cabins: [] })
+  }
+
+  const handleBookFromMap = (cabin: Cabin) => {
+    setBookingContext({ cabin, isOpen: true, returnToMap: true })
+  }
+
+  const handleCloseBooking = () => {
+    if (bookingContext.returnToMap && interactivePlan.isOpen) {
+      // Return to interactive map
+      setBookingContext({ cabin: null, isOpen: false, returnToMap: false })
+    } else {
+      // Normal close
+      setBookingContext({ cabin: null, isOpen: false, returnToMap: false })
+      setInteractivePlan({ isOpen: false, yacht: null, cabins: [] })
+    }
   }
 
   if (tripLoading || cabinsLoading) {
@@ -60,12 +89,20 @@ export function CabinsPage() {
       {cabinsByYacht && cabinsByYacht.length > 0 ? (
         cabinsByYacht.map(({ yacht, cabinsByDeck }) => {
           const deckPlanUrl = getFirstImage(yacht.deck_plan_urls)
+          const allCabinsForYacht = Object.values(cabinsByDeck).flat()
 
           return (
             <section key={yacht.id} className={styles.yachtSection}>
               <h2 className={styles.yachtName}>🛥️ {yacht.name}</h2>
 
-              {deckPlanUrl && <DeckPlan url={deckPlanUrl} yachtName={yacht.name} />}
+              {deckPlanUrl && (
+                <DeckPlan
+                  url={deckPlanUrl}
+                  yachtName={yacht.name}
+                  yacht={yacht}
+                  onOpenInteractive={() => handleOpenInteractivePlan(yacht, allCabinsForYacht)}
+                />
+              )}
 
               {yacht.description && (
                 <p className={styles.description}>{yacht.description}</p>
@@ -97,13 +134,27 @@ export function CabinsPage() {
         <p className={styles.empty}>Каюты не найдены</p>
       )}
 
-      {selectedCabin && trip && (
-        <BookingModal
-          cabin={selectedCabin}
-          trip_id={trip.id}
-          isOpen={isModalOpen}
-          onClose={handleCloseModal}
+      {/* Interactive Deck Plan overlay */}
+      {interactivePlan.isOpen && interactivePlan.yacht && (
+        <InteractiveDeckPlan
+          yacht={interactivePlan.yacht}
+          cabins={interactivePlan.cabins}
+          isOpen={interactivePlan.isOpen}
+          onClose={handleCloseInteractivePlan}
+          onBookCabin={handleBookFromMap}
         />
+      )}
+
+      {/* Booking Modal - hidden when returning to map */}
+      {bookingContext.cabin && trip && (
+        <div style={{ display: bookingContext.returnToMap && interactivePlan.isOpen ? 'none' : 'block' }}>
+          <BookingModal
+            cabin={bookingContext.cabin}
+            trip_id={trip.id}
+            isOpen={bookingContext.isOpen}
+            onClose={handleCloseBooking}
+          />
+        </div>
       )}
     </Layout>
   )
