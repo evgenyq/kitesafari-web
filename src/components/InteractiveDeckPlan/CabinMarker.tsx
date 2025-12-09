@@ -48,8 +48,6 @@ export function CabinMarker({ cabin, imageWidth, imageHeight, onClick }: CabinMa
         height: `${heightPercent}%`,
       }}
       onClick={handleClick}
-    >
-      <span className={styles.number}>#{cabin_number}</span>
-    </div>
+    />
   )
 }

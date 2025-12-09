@@ -44,16 +44,22 @@ export function CabinsPage() {
   }
 
   const handleBookFromMap = (cabin: Cabin) => {
+    // Keep yacht/cabins data, just close the UI
     setBookingContext({ cabin, isOpen: true, returnToMap: true })
+    setInteractivePlan(prev => ({ ...prev, isOpen: false }))
   }
 
   const handleCloseBooking = () => {
-    if (bookingContext.returnToMap && interactivePlan.isOpen) {
+    const shouldReturnToMap = bookingContext.returnToMap
+
+    // Always close booking
+    setBookingContext({ cabin: null, isOpen: false, returnToMap: false })
+
+    if (shouldReturnToMap && interactivePlan.yacht) {
       // Return to interactive map
-      setBookingContext({ cabin: null, isOpen: false, returnToMap: false })
+      setInteractivePlan(prev => ({ ...prev, isOpen: true }))
     } else {
-      // Normal close
-      setBookingContext({ cabin: null, isOpen: false, returnToMap: false })
+      // Normal close - clear everything
       setInteractivePlan({ isOpen: false, yacht: null, cabins: [] })
     }
   }
