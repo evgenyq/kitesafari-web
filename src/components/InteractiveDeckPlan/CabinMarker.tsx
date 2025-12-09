@@ -9,7 +9,7 @@ interface CabinMarkerProps {
 }
 
 export function CabinMarker({ cabin, imageWidth, imageHeight, onClick }: CabinMarkerProps) {
-  const { coords, status, cabin_number } = cabin
+  const { coords, status } = cabin
 
   // Convert pixel coordinates to percentages
   const leftPercent = (coords.left / imageWidth) * 100
