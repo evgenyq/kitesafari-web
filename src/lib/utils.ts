@@ -16,8 +16,14 @@ export function formatDateRange(startDate: string, endDate: string): string {
   const startDay = start.getDate()
   const endDay = end.getDate()
 
-  const startMonth = start.toLocaleDateString('ru-RU', { month: 'long' })
-  const endMonth = end.toLocaleDateString('ru-RU', { month: 'long' })
+  // Месяцы в родительном падеже
+  const monthsGenitive = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+  ]
+
+  const startMonth = monthsGenitive[start.getMonth()]
+  const endMonth = monthsGenitive[end.getMonth()]
 
   const startYear = start.getFullYear()
   const endYear = end.getFullYear()
