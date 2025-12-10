@@ -25,6 +25,7 @@
 - **Frontend:** React 18 + TypeScript + Vite
 - **Routing:** React Router v6
 - **Database:** Supabase (PostgreSQL)
+- **Backend:** Supabase Edge Functions (Deno/TypeScript)
 - **Styling:** CSS Modules
 - **Hosting:** GitHub Pages
 
@@ -38,6 +39,11 @@ kitesafari-web/
 │   ├── hooks/         # Custom hooks для данных
 │   ├── lib/           # Утилиты и Supabase клиент
 │   └── types/         # TypeScript типы
+├── supabase/
+│   ├── functions/     # Edge Functions (backend)
+│   │   ├── create-booking/  # Бронирование кают
+│   │   └── _shared/   # Общие типы и утилиты
+│   └── migrations/    # SQL миграции
 ├── public/            # Статические файлы
 ├── PLAN.md            # Детальный план разработки
 └── README.md          # Этот файл
@@ -63,6 +69,55 @@ cp .env.example .env
 
 # Запустить dev server
 npm run dev
+
+# Запустить Edge Functions локально (в отдельном терминале)
+supabase functions serve
+
+# Деплой Edge Functions на Supabase
+supabase functions deploy create-booking
+```
+
+## 🔧 Edge Functions
+
+### Локальная разработка
+
+```bash
+# Запустить все функции локально
+supabase functions serve
+
+# Запустить конкретную функцию
+supabase functions serve create-booking
+
+# Тестировать функцию
+curl -i --location --request POST 'http://localhost:54321/functions/v1/create-booking' \
+  --header 'Authorization: Bearer YOUR_ANON_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"trip_id":"...","cabin_id":"...","telegram_id":123}'
+```
+
+### Деплой
+
+```bash
+# Деплой всех функций
+supabase functions deploy
+
+# Деплой конкретной функции
+supabase functions deploy create-booking
+
+# Просмотр логов
+supabase functions logs create-booking
+```
+
+### Environment Variables
+
+Edge Functions используют следующие переменные:
+- `SUPABASE_URL` - автоматически
+- `SUPABASE_SERVICE_ROLE_KEY` - автоматически
+- `BOT_WEBHOOK_URL` - опционально, для уведомлений админов
+
+Установить через:
+```bash
+supabase secrets set BOT_WEBHOOK_URL=https://your-bot.com/webhook
 ```
 
 ## 📖 Документация

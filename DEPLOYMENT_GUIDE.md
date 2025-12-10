@@ -2,9 +2,9 @@
 
 ## Что деплоим
 
-1. **Database Migrations** - 4 миграции в Supabase
-2. **Edge Function** - `create-booking` функция на Supabase
-3. **Frontend** - React приложение на Vercel
+1. **Database Migrations** - 5 миграций в Supabase
+2. **Edge Functions** - `create-booking` функция на Supabase
+3. **Frontend** - React приложение на GitHub Pages
 
 ---
 
@@ -31,21 +31,21 @@ supabase --version
 # Логин
 supabase login
 
-# Перейти в папку с миграциями
-cd /Users/evgenyq/Projects/kitesafaribot
+# Перейти в папку проекта
+cd /Users/evgenyq/Projects/kitesafari-web
 
 # Линковать к Supabase проекту
 supabase link --project-ref zmbiiywazaytltemzzvc
 ```
 
-Когда спросит пароль БД - это пароль от Supabase project settings → Database → Database password
+Когда спросит пароль БД - это пароль из Supabase project settings → Database → Database password
 
 ---
 
 ## Шаг 3: Накатить миграции
 
 ```bash
-cd /Users/evgenyq/Projects/kitesafaribot
+cd /Users/evgenyq/Projects/kitesafari-web
 
 # Применить ВСЕ миграции сразу
 supabase db push
@@ -56,6 +56,7 @@ supabase db push
 - ✅ `002_enable_realtime_cabins.sql` - Realtime для cabins таблицы
 - ✅ `003_add_guests_info_to_bookings.sql` - поле guests_info
 - ✅ `004_add_rls_policies.sql` - Row Level Security политики
+- ✅ `005_add_cabin_map.sql` - поле cabin_map для интерактивных планов палуб
 
 **Проверка**: Зайди в Supabase Dashboard → Table Editor → проверь что поля добавились
 
@@ -69,12 +70,15 @@ supabase db push
 
 ---
 
-## Шаг 5: Задеплоить Edge Function
+## Шаг 5: Задеплоить Edge Functions
 
 ```bash
-cd /Users/evgenyq/Projects/kitesafaribot
+cd /Users/evgenyq/Projects/kitesafari-web
 
-# Деплой функции
+# Деплой всех функций
+supabase functions deploy
+
+# Или деплой конкретной функции
 supabase functions deploy create-booking
 
 # Настроить секреты (environment variables)
@@ -87,14 +91,14 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<paste-your-service-role-key>
 
 **Проверка**:
 ```bash
-# Посмотреть статус функции
+# Посмотреть статус функций
 supabase functions list
 
 # Посмотреть логи
 supabase functions logs create-booking --tail
 ```
 
-URL функции будет: `https://zmbiiywazaytltemzzvc.supabase.co/functions/v1/create-booking`
+URL функции: `https://zmbiiywazaytltemzzvc.supabase.co/functions/v1/create-booking`
 
 ---
 
@@ -126,51 +130,51 @@ curl -X POST https://zmbiiywazaytltemzzvc.supabase.co/functions/v1/create-bookin
 
 ---
 
-## Шаг 7: Задеплоить Frontend на Vercel
+## Шаг 7: Задеплоить Frontend на GitHub Pages
 
-### Вариант A: Через Vercel CLI (быстро)
+### Подготовка
 
+1. Убедись что `.env.production` настроен:
 ```bash
 cd /Users/evgenyq/Projects/kitesafari-web
-
-# Установить Vercel CLI
-npm i -g vercel
-
-# Деплой (первый раз - настройка, потом автоматом)
-vercel
-
-# Production деплой
-vercel --prod
+cat .env.production
 ```
 
-### Вариант B: Через Git + Vercel Dashboard
-
-1. Закоммить все изменения:
-```bash
-cd /Users/evgenyq/Projects/kitesafari-web
-git add .
-git commit -m "feat: add booking feature with Optimistic Lock
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-git push origin main
-```
-
-2. Зайти на [vercel.com](https://vercel.com)
-3. Import Git Repository
-4. Deploy
-
-### Environment Variables для Vercel
-
-В Vercel Dashboard → Settings → Environment Variables добавь:
-
+Должно быть:
 ```
 VITE_SUPABASE_URL=https://zmbiiywazaytltemzzvc.supabase.co
 VITE_SUPABASE_ANON_KEY=<твой anon key из Supabase Dashboard>
 ```
 
 ⚠️ **ВАЖНО**: Используй `anon` key, НЕ `service_role`!
+
+### Деплой
+
+```bash
+cd /Users/evgenyq/Projects/kitesafari-web
+
+# Закоммить все изменения
+git add .
+git commit -m "feat: add Edge Functions to kitesafari-web
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# Пушнуть в main (триггерит GitHub Actions)
+git push origin main
+```
+
+GitHub Actions автоматически:
+1. Соберет проект (`npm run build`)
+2. Задеплоит в gh-pages ветку
+3. Сайт будет доступен на `https://username.github.io/kitesafari-web/`
+
+### Проверка деплоя
+
+1. GitHub → Actions → проверь что workflow успешно завершился
+2. Открой URL сайта
+3. Проверь что бронирование работает
 
 ---
 
@@ -226,18 +230,19 @@ supabase secrets list
 
 ### CORS ошибки
 
-В `kitesafaribot/supabase/functions/_shared/cors.ts` добавь свой production URL:
+В `supabase/functions/_shared/cors.ts` добавь свой production URL:
 
 ```typescript
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  'https://kitesafari-web.vercel.app', // твой Vercel URL
+  'https://username.github.io', // твой GitHub Pages URL
   'https://your-custom-domain.com',
 ]
 ```
 
 Передеплой функцию:
 ```bash
+cd /Users/evgenyq/Projects/kitesafari-web
 supabase functions deploy create-booking
 ```
 
@@ -272,12 +277,13 @@ supabase db reset --db-url "postgresql://postgres:your-password@db.zmbiiywazaytl
 ### Удалить Edge Function
 
 ```bash
+cd /Users/evgenyq/Projects/kitesafari-web
 supabase functions delete create-booking
 ```
 
 ### Откатить Frontend
 
-В Vercel Dashboard → Deployments → Rollback to previous
+В GitHub → Actions → найти предыдущий успешный деплой → Re-run job
 
 ---
 
