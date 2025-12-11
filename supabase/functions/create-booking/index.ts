@@ -1,9 +1,11 @@
 // Edge Function: create-booking
 // Purpose: Create cabin booking with Optimistic Locking for race condition protection
+// Supports admin override mode for rebooking any cabin
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
+import { getAuthContext } from '../_shared/auth.ts'
 import type { CreateBookingRequest, CreateBookingResponse, CabinData, BookingType, CabinStatus } from '../_shared/types.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -26,27 +28,142 @@ serve(async (req) => {
 
     // Parse request body
     const body: CreateBookingRequest = await req.json()
-    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details } = body
+    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details, admin_override } = body
 
-    // Validate required fields
-    if (!trip_id || !cabin_id || !telegram_id || !telegram_handle || !full_name || !booking_type) {
+    // Get auth context (validates initData and checks admin status)
+    let authContext
+    try {
+      authContext = await getAuthContext(req)
+    } catch (authError) {
+      console.error('Auth error:', authError)
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing required fields', error_code: 'VALIDATION_ERROR' }),
-        { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR' }),
+        { status: 401, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
       )
     }
 
-    // Validate booking type
-    const validBookingTypes: BookingType[] = ['full_single', 'full_double', 'half', 'join']
-    if (!validBookingTypes.includes(booking_type as BookingType)) {
+    // Check admin privileges if admin_override requested
+    if (admin_override && !authContext.isAdmin) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Invalid booking type', error_code: 'INVALID_BOOKING_TYPE' }),
-        { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Admin privileges required', error_code: 'FORBIDDEN' }),
+        { status: 403, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
       )
+    }
+
+    // Validate required fields (different for admin vs normal)
+    if (admin_override) {
+      // Admin mode: only need cabin_id, trip_id, guests_info
+      if (!trip_id || !cabin_id || !guests_info) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Missing required fields for admin mode', error_code: 'VALIDATION_ERROR' }),
+          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
+    } else {
+      // Normal mode: need all booking fields
+      if (!trip_id || !cabin_id || !telegram_id || !telegram_handle || !full_name || !booking_type) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Missing required fields', error_code: 'VALIDATION_ERROR' }),
+          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Validate booking type
+      const validBookingTypes: BookingType[] = ['full_single', 'full_double', 'half', 'join']
+      if (!validBookingTypes.includes(booking_type as BookingType)) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid booking type', error_code: 'INVALID_BOOKING_TYPE' }),
+          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
     }
 
     // Initialize Supabase client with service role key
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    // ====================
+    // ADMIN OVERRIDE MODE
+    // ====================
+    if (admin_override) {
+      // Admin mode: skip normal booking logic, just update cabin directly
+
+      // Get cabin details
+      const { data: cabin, error: cabinError } = await supabase
+        .from('cabins')
+        .select('id, cabin_number, deck, bed_type, price, status, guests, updated_at')
+        .eq('id', cabin_id)
+        .single<CabinData>()
+
+      if (cabinError || !cabin) {
+        console.error('Error fetching cabin:', cabinError)
+        return new Response(
+          JSON.stringify({ success: false, error: 'Cabin not found', error_code: 'CABIN_NOT_FOUND' }),
+          { status: 404, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Update cabin with admin's guests_info
+      const { error: updateError } = await supabase
+        .from('cabins')
+        .update({
+          status: 'Booked', // Always mark as Booked for admin override
+          guests: guests_info,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cabin_id)
+
+      if (updateError) {
+        console.error('Error updating cabin:', updateError)
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }),
+          { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Optionally: Create a booking record for tracking
+      // (Using placeholder user_id or admin's telegram_id)
+      const { data: booking } = await supabase
+        .from('bookings')
+        .insert({
+          trip_id,
+          cabin_id: cabin.id,
+          user_id: null, // Placeholder - no specific user
+          guest_telegram_handle: 'admin',
+          guest_full_name: 'Admin Override',
+          cabin_number: cabin.cabin_number,
+          cabin_deck: cabin.deck,
+          cabin_bed_type: cabin.bed_type,
+          cabin_price: cabin.price,
+          booking_type: 'full_double', // Default for admin
+          payer_info: { type: 'admin', details: 'Manual admin booking' },
+          total_amount: cabin.price,
+          paid_amount: 0,
+          payment_status: 'pending',
+          payment_deadline: null,
+          booking_status: 'active',
+          guests_info,
+          booking_source: 'admin',
+          admin_booked_by: authContext.telegramId,
+        })
+        .select('id')
+        .single()
+
+      console.log(`✅ Admin override booking: ${authContext.telegramUsername || authContext.telegramId} updated cabin ${cabin.cabin_number}`)
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          booking_id: booking?.id || null,
+          total_amount: cabin.price,
+          message: 'Cabin updated by admin',
+        }),
+        { status: 201, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ====================
+    // NORMAL BOOKING MODE
+    // ====================
 
     // Step 1: Get or create user by telegram_id
     let { data: users, error: userError } = await supabase

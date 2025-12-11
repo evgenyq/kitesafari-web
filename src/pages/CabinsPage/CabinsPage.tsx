@@ -8,6 +8,7 @@ import { BookingModal } from '../../components/BookingModal'
 import { InteractiveDeckPlan } from '../../components/InteractiveDeckPlan'
 import { useTrip } from '../../hooks/useTrip'
 import { useCabins } from '../../hooks/useCabins'
+import { useAdmin } from '../../hooks/useAdmin'
 import { getFirstImage } from '../../lib/utils'
 import type { Cabin, Yacht } from '../../types'
 import styles from './CabinsPage.module.css'
@@ -16,6 +17,7 @@ export function CabinsPage() {
   const { accessCode } = useParams<{ accessCode: string }>()
   const { data: trip, loading: tripLoading } = useTrip(accessCode)
   const { data: cabinsByYacht, loading: cabinsLoading, error: cabinsError } = useCabins(trip?.id)
+  const { isAdmin } = useAdmin()
 
   // Interactive deck plan state
   const [interactivePlan, setInteractivePlan] = useState<{
@@ -90,6 +92,11 @@ export function CabinsPage() {
           ← Назад к трипу
         </Link>
         <h1>{trip.name} - Каюты</h1>
+        {isAdmin && (
+          <Link to={`/${accessCode}/admin`} className={styles.adminLink}>
+            🛠️ Админ-панель
+          </Link>
+        )}
       </div>
 
       {cabinsByYacht && cabinsByYacht.length > 0 ? (

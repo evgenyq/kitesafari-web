@@ -4,6 +4,7 @@ import { TripPage } from './pages/TripPage/TripPage'
 import { CabinsPage } from './pages/CabinsPage/CabinsPage'
 import { OnboardingPage } from './pages/OnboardingPage/OnboardingPage'
 import { TripsListPage } from './pages/TripsListPage/TripsListPage'
+import { AdminPage } from './pages/AdminPage/AdminPage'
 import { useTelegramWebApp, useCloudStorage } from './hooks/useTelegramWebApp'
 
 const ADMIN_USERNAMES = ['evgenyq']
@@ -137,6 +138,7 @@ function AppContent() {
       />
       <Route path="/:accessCode" element={<TripPage />} />
       <Route path="/:accessCode/cabins" element={<CabinsPage />} />
+      <Route path="/:accessCode/admin" element={<AdminPage />} />
     </Routes>
   )
 }

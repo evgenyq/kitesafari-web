@@ -22,6 +22,24 @@
   color: var(--tg-theme-text-color, #333);
 }
 
+.adminLink {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: var(--tg-theme-button-color, #007AFF);
+  color: var(--tg-theme-button-text-color, white);
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.adminLink:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
 .yachtSection {
   background: var(--tg-theme-secondary-bg-color, white);
   border: 1px solid var(--tg-theme-hint-color, #e5e7eb);

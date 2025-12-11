@@ -11,12 +11,13 @@ export type BookingStatus = 'active' | 'cancelled' | 'completed' | 'moved'
 export interface CreateBookingRequest {
   trip_id: string
   cabin_id: string
-  telegram_id: number
-  telegram_handle: string
-  full_name: string
-  booking_type: BookingType
-  guests_info?: string // For full_double: "@username Name, second_guest"
+  telegram_id?: number // Optional for admin override
+  telegram_handle?: string // Optional for admin override
+  full_name?: string // Optional for admin override
+  booking_type?: BookingType // Optional for admin override
+  guests_info?: string // For full_double: "@username Name, second_guest" OR admin free-text
   payer_details?: string // Optional payer information
+  admin_override?: boolean // Admin mode: bypass validation, use free-text guests
 }
 
 export interface CreateBookingResponse {
