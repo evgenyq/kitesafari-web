@@ -107,7 +107,7 @@ serve(async (req) => {
         .from('cabins')
         .update({
           status: cabin_status || 'Booked', // Use provided status or default to Booked
-          guests: guests_info,
+          guests: guests_info || null, // Use null instead of empty string for cleaner DB
           updated_at: new Date().toISOString(),
         })
         .eq('id', cabin_id)
@@ -120,35 +120,42 @@ serve(async (req) => {
         )
       }
 
-      // Optionally: Create a booking record for tracking
-      // (Using placeholder user_id or admin's telegram_id)
-      const { data: booking } = await supabase
-        .from('bookings')
-        .insert({
-          trip_id,
-          cabin_id: cabin.id,
-          user_id: null, // Placeholder - no specific user
-          guest_telegram_handle: 'admin',
-          guest_full_name: 'Admin Override',
-          cabin_number: cabin.cabin_number,
-          cabin_deck: cabin.deck,
-          cabin_bed_type: cabin.bed_type,
-          cabin_price: cabin.price,
-          booking_type: 'full_double', // Default for admin
-          payer_info: { type: 'admin', details: 'Manual admin booking' },
-          total_amount: cabin.price,
-          paid_amount: 0,
-          payment_status: 'pending',
-          payment_deadline: null,
-          booking_status: 'active',
-          guests_info,
-          booking_source: 'admin',
-          admin_booked_by: authContext.telegramId,
-        })
-        .select('id')
-        .single()
+      // Only create booking record for statuses that actually have bookings
+      // Available and STAFF cabins don't need booking records
+      let booking = null
+      const needsBooking = cabin_status !== 'Available' && cabin_status !== 'STAFF'
 
-      console.log(`✅ Admin override booking: ${authContext.telegramUsername || authContext.telegramId} updated cabin ${cabin.cabin_number}`)
+      if (needsBooking) {
+        const { data: bookingData } = await supabase
+          .from('bookings')
+          .insert({
+            trip_id,
+            cabin_id: cabin.id,
+            user_id: null, // Placeholder - no specific user
+            guest_telegram_handle: 'admin',
+            guest_full_name: 'Admin Override',
+            cabin_number: cabin.cabin_number,
+            cabin_deck: cabin.deck,
+            cabin_bed_type: cabin.bed_type,
+            cabin_price: cabin.price,
+            booking_type: 'full_double', // Default for admin
+            payer_info: { type: 'admin', details: 'Manual admin booking' },
+            total_amount: cabin.price,
+            paid_amount: 0,
+            payment_status: 'pending',
+            payment_deadline: null,
+            booking_status: 'active',
+            guests_info,
+            booking_source: 'admin',
+            admin_booked_by: authContext.telegramId,
+          })
+          .select('id')
+          .single()
+
+        booking = bookingData
+      }
+
+      console.log(`✅ Admin override: ${authContext.telegramUsername || authContext.telegramId} set cabin ${cabin.cabin_number} to ${cabin_status || 'Booked'}`)
 
       return new Response(
         JSON.stringify({
