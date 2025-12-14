@@ -11,12 +11,9 @@ CREATE TABLE IF NOT EXISTS admin_users (
 -- Add index for fast lookups
 CREATE INDEX IF NOT EXISTS idx_admin_users_telegram_id ON admin_users(telegram_id);
 
--- Insert initial admins (from CLAUDE.md)
--- Replace with actual telegram IDs
+-- Insert initial admins
 INSERT INTO admin_users (telegram_id, telegram_username) VALUES
-  (123456789, 'Evgeny_Q'),
-  (987654321, 'Droptik'),
-  (111222333, 'kitesafari_admin')
+  (58500313, 'evgenyq')
 ON CONFLICT (telegram_id) DO NOTHING;
 
 -- Enable RLS on admin_users
