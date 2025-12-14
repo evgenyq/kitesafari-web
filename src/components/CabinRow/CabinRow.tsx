@@ -10,7 +10,8 @@ interface CabinRowProps {
 }
 
 export function CabinRow({ cabin, onBookClick }: CabinRowProps) {
-  const showGuests = cabin.guests && (cabin.status === 'Booked' || cabin.status === 'Half Available')
+  // Only show guests for Half Available cabins (so users know who's already there)
+  const showGuests = cabin.guests && cabin.status === 'Half Available'
 
   // Cabin is bookable if Available or Half Available
   const isBookable = cabin.status === 'Available' || cabin.status === 'Half Available'

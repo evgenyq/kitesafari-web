@@ -72,7 +72,8 @@ export function CabinPopup({ cabin, onClose, onBook }: CabinPopupProps) {
             </div>
           </div>
 
-          {cabin.guests && (
+          {/* Only show guests for Half Available cabins */}
+          {cabin.guests && cabin.status === 'Half Available' && (
             <div className={styles.guests}>
               <strong>👥 Гости:</strong> {cabin.guests}
             </div>
