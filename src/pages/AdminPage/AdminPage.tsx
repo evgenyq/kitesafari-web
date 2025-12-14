@@ -95,17 +95,28 @@ export function AdminPage() {
 
                     {cabins.map((cabin) => (
                       <div key={cabin.id} className={styles.tableRow}>
-                        <div className={styles.col}>#{cabin.cabin_number}</div>
-                        <div className={styles.col}>{cabin.bed_type}</div>
                         <div className={styles.col}>
+                          <strong>Каюта</strong>
+                          <span>#{cabin.cabin_number}</span>
+                        </div>
+                        <div className={styles.col}>
+                          <strong>Тип</strong>
+                          <span>{cabin.bed_type}</span>
+                        </div>
+                        <div className={styles.col}>
+                          <strong>Статус</strong>
                           <span className={`${styles.status} ${styles[cabin.status.replace(' ', '')]}`}>
                             {cabin.status}
                           </span>
                         </div>
                         <div className={styles.col}>
-                          {cabin.guests || <span className={styles.empty}>—</span>}
+                          <strong>Гости</strong>
+                          <span>{cabin.guests || <span className={styles.empty}>—</span>}</span>
                         </div>
-                        <div className={styles.col}>${cabin.price}</div>
+                        <div className={styles.col}>
+                          <strong>Цена</strong>
+                          <span>${cabin.price}</span>
+                        </div>
                         <div className={styles.col}>
                           <button
                             className={styles.actionButton}
