@@ -10,13 +10,14 @@
 }
 
 .modal {
-  background: white;
+  background: var(--tg-theme-bg-color, white);
   border-radius: 16px;
   max-width: 600px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  color: var(--tg-theme-text-color, #000);
 }
 
 .header {
@@ -24,12 +25,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--tg-theme-hint-color, var(--color-border));
 }
 
 .header h2 {
   margin: 0;
   font-size: 1.25rem;
+  color: var(--tg-theme-text-color, #000);
 }
 
 .closeButton {
@@ -37,7 +39,7 @@
   border: none;
   font-size: 2rem;
   cursor: pointer;
-  color: var(--color-text-secondary);
+  color: var(--tg-theme-hint-color, var(--color-text-secondary));
   line-height: 1;
   padding: 0;
   width: 32px;
@@ -48,18 +50,19 @@
 }
 
 .closeButton:hover {
-  color: var(--color-text);
+  color: var(--tg-theme-text-color, var(--color-text));
 }
 
 .cabinInfo {
   padding: 1.5rem;
-  background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--tg-theme-secondary-bg-color, var(--color-background));
+  border-bottom: 1px solid var(--tg-theme-hint-color, var(--color-border));
 }
 
 .cabinInfo p {
   margin: 0.5rem 0;
   font-size: 0.95rem;
+  color: var(--tg-theme-text-color, #000);
 }
 
 .status {
@@ -97,6 +100,7 @@
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
+  color: var(--tg-theme-text-color, #000);
 }
 
 .required {
@@ -107,10 +111,12 @@
 .textarea {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--tg-theme-hint-color, var(--color-border));
   border-radius: 8px;
   font-family: inherit;
   font-size: 0.95rem;
+  background: var(--tg-theme-bg-color, white);
+  color: var(--tg-theme-text-color, #000);
 }
 
 .textarea {
@@ -120,19 +126,20 @@
 .select:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--tg-theme-button-color, var(--color-primary));
 }
 
 .select:disabled,
 .textarea:disabled {
-  background: var(--color-background);
+  background: var(--tg-theme-secondary-bg-color, var(--color-background));
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .hint {
   margin-top: 0.5rem;
   font-size: 0.85rem;
-  color: var(--color-text-secondary);
+  color: var(--tg-theme-hint-color, var(--color-text-secondary));
 }
 
 .error {
@@ -170,31 +177,31 @@
 }
 
 .clearButton {
-  background: var(--color-background);
-  color: var(--color-text);
+  background: var(--tg-theme-secondary-bg-color, var(--color-background));
+  color: var(--tg-theme-text-color, var(--color-text));
   margin-right: auto;
 }
 
 .clearButton:hover:not(:disabled) {
-  background: var(--color-border);
+  opacity: 0.8;
 }
 
 .cancelButton {
-  background: var(--color-background);
-  color: var(--color-text);
+  background: var(--tg-theme-secondary-bg-color, var(--color-background));
+  color: var(--tg-theme-text-color, var(--color-text));
 }
 
 .cancelButton:hover:not(:disabled) {
-  background: var(--color-border);
+  opacity: 0.8;
 }
 
 .submitButton {
-  background: var(--color-primary);
-  color: white;
+  background: var(--tg-theme-button-color, var(--color-primary));
+  color: var(--tg-theme-button-text-color, white);
 }
 
 .submitButton:hover:not(:disabled) {
-  background: var(--color-primary-dark);
+  opacity: 0.9;
   transform: translateY(-1px);
 }
 
