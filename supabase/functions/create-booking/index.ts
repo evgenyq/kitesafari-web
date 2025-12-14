@@ -102,43 +102,57 @@ serve(async (req) => {
         )
       }
 
-      // Update cabin with admin's guests_info and status
-      const { error: updateError } = await supabase
-        .from('cabins')
-        .update({
-          status: cabin_status || 'Booked', // Use provided status or default to Booked
-          guests: guests_info || null, // Use null instead of empty string for cleaner DB
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', cabin_id)
+      // Find existing active booking for this cabin
+      const { data: existingBooking } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('cabin_id', cabin_id)
+        .eq('booking_status', 'active')
+        .maybeSingle()
 
-      if (updateError) {
-        console.error('Error updating cabin:', updateError)
-        return new Response(
-          JSON.stringify({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }),
-          { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
-      }
+      const finalStatus = cabin_status || 'Booked'
+      const needsBooking = finalStatus !== 'Available' && finalStatus !== 'STAFF'
 
-      // Only create booking record for statuses that actually have bookings
-      // Available and STAFF cabins don't need booking records
       let booking = null
-      const needsBooking = cabin_status !== 'Available' && cabin_status !== 'STAFF'
 
-      if (needsBooking) {
-        const { data: bookingData } = await supabase
+      if (needsBooking && existingBooking) {
+        // UPDATE existing booking
+        const { data: updatedBooking, error: updateBookingError } = await supabase
+          .from('bookings')
+          .update({
+            guests_info,
+            cabin_number: cabin.cabin_number,
+            cabin_deck: cabin.deck,
+            cabin_bed_type: cabin.bed_type,
+            cabin_price: cabin.price,
+            total_amount: cabin.price,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingBooking.id)
+          .select('id')
+          .single()
+
+        if (updateBookingError) {
+          console.error('Error updating booking:', updateBookingError)
+        } else {
+          booking = updatedBooking
+          console.log(`✅ Admin updated existing booking ${existingBooking.id} for cabin ${cabin.cabin_number}`)
+        }
+      } else if (needsBooking && !existingBooking) {
+        // CREATE new booking (cabin was empty before)
+        const { data: newBooking, error: insertBookingError } = await supabase
           .from('bookings')
           .insert({
             trip_id,
             cabin_id: cabin.id,
-            user_id: null, // Placeholder - no specific user
+            user_id: null,
             guest_telegram_handle: 'admin',
             guest_full_name: 'Admin Override',
             cabin_number: cabin.cabin_number,
             cabin_deck: cabin.deck,
             cabin_bed_type: cabin.bed_type,
             cabin_price: cabin.price,
-            booking_type: 'full_double', // Default for admin
+            booking_type: 'full_double',
             payer_info: { type: 'admin', details: 'Manual admin booking' },
             total_amount: cabin.price,
             paid_amount: 0,
@@ -152,10 +166,48 @@ serve(async (req) => {
           .select('id')
           .single()
 
-        booking = bookingData
+        if (insertBookingError) {
+          console.error('Error creating booking:', insertBookingError)
+        } else {
+          booking = newBooking
+          console.log(`✅ Admin created new booking ${newBooking.id} for cabin ${cabin.cabin_number}`)
+        }
+      } else if (!needsBooking && existingBooking) {
+        // CANCEL existing booking (clearing cabin to Available/STAFF)
+        const { error: cancelBookingError } = await supabase
+          .from('bookings')
+          .update({
+            booking_status: 'cancelled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingBooking.id)
+
+        if (cancelBookingError) {
+          console.error('Error cancelling booking:', cancelBookingError)
+        } else {
+          console.log(`✅ Admin cancelled booking ${existingBooking.id} for cabin ${cabin.cabin_number} (set to ${finalStatus})`)
+        }
       }
 
-      console.log(`✅ Admin override: ${authContext.telegramUsername || authContext.telegramId} set cabin ${cabin.cabin_number} to ${cabin_status || 'Booked'}`)
+      // Update cabin AFTER handling booking logic
+      const { error: updateError } = await supabase
+        .from('cabins')
+        .update({
+          status: finalStatus,
+          guests: guests_info || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cabin_id)
+
+      if (updateError) {
+        console.error('Error updating cabin:', updateError)
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }),
+          { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
+        )
+      }
+
+      console.log(`✅ Admin override: ${authContext.telegramUsername || authContext.telegramId} set cabin ${cabin.cabin_number} to ${finalStatus}`)
 
       return new Response(
         JSON.stringify({
