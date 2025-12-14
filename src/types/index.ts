@@ -59,7 +59,7 @@ export interface Cabin {
   updated_at: string
 }
 
-export type CabinStatus = 'Available' | 'Booked' | 'Half Available' | 'STAFF'
+export type CabinStatus = 'Available' | 'Booked' | 'Paid' | 'Half Available' | 'Unavailable' | 'STAFF'
 
 // Extended types with joined data
 

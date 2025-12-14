@@ -3,7 +3,7 @@ import { useParams, Link, Navigate } from 'react-router-dom'
 import { Layout } from '../../components/Layout/Layout'
 import { AdminBookingModal } from './AdminBookingModal'
 import { useTrip } from '../../hooks/useTrip'
-import { useCabins } from '../../hooks/useCabins'
+import { useAllCabins } from '../../hooks/useAllCabins'
 import { useAdmin } from '../../hooks/useAdmin'
 import type { Cabin } from '../../types'
 import styles from './AdminPage.module.css'
@@ -12,7 +12,7 @@ export function AdminPage() {
   const { accessCode } = useParams<{ accessCode: string }>()
   const { isAdmin, loading: adminLoading } = useAdmin()
   const { data: trip, loading: tripLoading } = useTrip(accessCode)
-  const { data: cabinsByYacht, loading: cabinsLoading } = useCabins(trip?.id)
+  const { data: cabinsByYacht, loading: cabinsLoading } = useAllCabins(trip?.id)
 
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -122,7 +122,7 @@ export function AdminPage() {
                             className={styles.actionButton}
                             onClick={() => handleBookCabin(cabin)}
                           >
-                            {cabin.status === 'Available' ? 'Забронировать' : 'Перебронировать'}
+                            Изменить
                           </button>
                         </div>
                       </div>

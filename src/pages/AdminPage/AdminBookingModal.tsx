@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Cabin } from '../../types'
+import type { Cabin, CabinStatus } from '../../types'
 import styles from './AdminBookingModal.module.css'
 
 interface AdminBookingModalProps {
@@ -9,6 +9,8 @@ interface AdminBookingModalProps {
   onClose: () => void
 }
 
+const CABIN_STATUSES: CabinStatus[] = ['Available', 'Half Available', 'Booked', 'Paid', 'Unavailable', 'STAFF']
+
 export function AdminBookingModal({
   cabin,
   trip_id,
@@ -16,6 +18,7 @@ export function AdminBookingModal({
   onClose,
 }: AdminBookingModalProps) {
   const [guestsInfo, setGuestsInfo] = useState(cabin.guests || '')
+  const [status, setStatus] = useState<CabinStatus>(cabin.status)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -55,6 +58,7 @@ export function AdminBookingModal({
             trip_id,
             cabin_id: cabin.id,
             guests_info: guestsInfo.trim(),
+            cabin_status: status,
             admin_override: true,
           }),
         }
@@ -119,6 +123,26 @@ export function AdminBookingModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className={styles.form}>
+            <div className={styles.field}>
+              <label htmlFor="status">
+                Статус каюты <span className={styles.required}>*</span>
+              </label>
+              <select
+                id="status"
+                className={styles.select}
+                value={status}
+                onChange={(e) => setStatus(e.target.value as CabinStatus)}
+                disabled={loading}
+                required
+              >
+                {CABIN_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className={styles.field}>
               <label htmlFor="guests">
                 Гости <span className={styles.required}>*</span>

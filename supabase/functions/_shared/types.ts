@@ -18,6 +18,7 @@ export interface CreateBookingRequest {
   guests_info?: string // For full_double: "@username Name, second_guest" OR admin free-text
   payer_details?: string // Optional payer information
   admin_override?: boolean // Admin mode: bypass validation, use free-text guests
+  cabin_status?: CabinStatus // Admin mode: set specific cabin status
 }
 
 export interface CreateBookingResponse {

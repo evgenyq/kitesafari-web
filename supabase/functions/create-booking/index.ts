@@ -28,7 +28,7 @@ serve(async (req) => {
 
     // Parse request body
     const body: CreateBookingRequest = await req.json()
-    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details, admin_override } = body
+    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details, admin_override, cabin_status } = body
 
     // Get auth context (validates initData and checks admin status)
     let authContext
@@ -102,11 +102,11 @@ serve(async (req) => {
         )
       }
 
-      // Update cabin with admin's guests_info
+      // Update cabin with admin's guests_info and status
       const { error: updateError } = await supabase
         .from('cabins')
         .update({
-          status: 'Booked', // Always mark as Booked for admin override
+          status: cabin_status || 'Booked', // Use provided status or default to Booked
           guests: guests_info,
           updated_at: new Date().toISOString(),
         })
