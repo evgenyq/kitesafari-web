@@ -7,6 +7,15 @@
     <title>Kite Safari</title>
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Eruda Console for debugging (only load if ?debug=1 in URL) -->
+    <script>
+      if (window.location.search.includes('debug=1')) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+        document.head.appendChild(script);
+        script.onload = function () { eruda.init(); };
+      }
+    </script>
     <!-- Start Single Page Apps for GitHub Pages -->
     <script>
       // Single Page Apps for GitHub Pages
