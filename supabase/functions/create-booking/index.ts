@@ -52,8 +52,9 @@ serve(async (req) => {
 
     // Validate required fields (different for admin vs normal)
     if (admin_override) {
-      // Admin mode: only need cabin_id, trip_id, guests_info
-      if (!trip_id || !cabin_id || !guests_info) {
+      // Admin mode: only need cabin_id, trip_id
+      // guests_info is optional - can be empty for Available/STAFF statuses
+      if (!trip_id || !cabin_id) {
         return new Response(
           JSON.stringify({ success: false, error: 'Missing required fields for admin mode', error_code: 'VALIDATION_ERROR' }),
           { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
