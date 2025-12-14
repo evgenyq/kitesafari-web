@@ -22,14 +22,25 @@ export function AdminBookingModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [showWarning, setShowWarning] = useState(false)
 
   if (!isOpen) return null
+
+  // Check if status allows empty guests
+  const canBeEmpty = status === 'Available' || status === 'STAFF'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!guestsInfo.trim()) {
-      setError('Укажите гостей')
+    // If status allows empty guests but guests field is not empty, show warning
+    if (canBeEmpty && guestsInfo.trim() && !showWarning) {
+      setShowWarning(true)
+      return
+    }
+
+    // If status requires guests and field is empty
+    if (!canBeEmpty && !guestsInfo.trim()) {
+      setError('Укажите гостей для данного статуса')
       return
     }
 
@@ -44,6 +55,9 @@ export function AdminBookingModal({
         throw new Error('Telegram initData not found')
       }
 
+      // For Available/STAFF statuses, clear guests info
+      const finalGuestsInfo = canBeEmpty ? '' : guestsInfo.trim()
+
       // Call create-booking with admin_override
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-booking`,
@@ -57,7 +71,7 @@ export function AdminBookingModal({
           body: JSON.stringify({
             trip_id,
             cabin_id: cabin.id,
-            guests_info: guestsInfo.trim(),
+            guests_info: finalGuestsInfo,
             cabin_status: status,
             admin_override: true,
           }),
@@ -84,6 +98,11 @@ export function AdminBookingModal({
 
   const handleClear = () => {
     setGuestsInfo('')
+  }
+
+  const handleStatusChange = (newStatus: CabinStatus) => {
+    setStatus(newStatus)
+    setShowWarning(false) // Reset warning when status changes
   }
 
   return (
@@ -131,7 +150,7 @@ export function AdminBookingModal({
                 id="status"
                 className={styles.select}
                 value={status}
-                onChange={(e) => setStatus(e.target.value as CabinStatus)}
+                onChange={(e) => handleStatusChange(e.target.value as CabinStatus)}
                 disabled={loading}
                 required
               >
@@ -145,7 +164,7 @@ export function AdminBookingModal({
 
             <div className={styles.field}>
               <label htmlFor="guests">
-                Гости <span className={styles.required}>*</span>
+                Гости {!canBeEmpty && <span className={styles.required}>*</span>}
               </label>
               <textarea
                 id="guests"
@@ -155,12 +174,20 @@ export function AdminBookingModal({
                 placeholder="Введите имена гостей через запятую или с новой строки&#10;Пример:&#10;Иван Петров&#10;Мария Сидорова"
                 rows={5}
                 disabled={loading}
-                required
+                required={!canBeEmpty}
               />
               <p className={styles.hint}>
-                Можно указать любые имена в свободной форме
+                {canBeEmpty
+                  ? 'Для статусов Available и STAFF информация о гостях будет автоматически очищена'
+                  : 'Можно указать любые имена в свободной форме'}
               </p>
             </div>
+
+            {showWarning && (
+              <div className={styles.warning}>
+                ⚠️ При сохранении статуса "{status}" информация о гостях будет удалена. Продолжить?
+              </div>
+            )}
 
             {error && <div className={styles.error}>{error}</div>}
 
@@ -184,9 +211,9 @@ export function AdminBookingModal({
               <button
                 type="submit"
                 className={styles.submitButton}
-                disabled={loading || !guestsInfo.trim()}
+                disabled={loading || (!canBeEmpty && !guestsInfo.trim())}
               >
-                {loading ? 'Сохранение...' : 'Сохранить'}
+                {loading ? 'Сохранение...' : showWarning ? 'Подтвердить' : 'Сохранить'}
               </button>
             </div>
           </form>

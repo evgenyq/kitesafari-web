@@ -142,6 +142,16 @@
   color: var(--tg-theme-hint-color, var(--color-text-secondary));
 }
 
+.warning {
+  padding: 1rem;
+  background: #fff3e0;
+  color: #e65100;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  border-left: 4px solid #ff9800;
+}
+
 .error {
   padding: 1rem;
   background: #ffebee;
