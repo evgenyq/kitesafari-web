@@ -58,6 +58,16 @@ export function AdminBookingModal({
       // For Available/STAFF statuses, clear guests info
       const finalGuestsInfo = canBeEmpty ? '' : guestsInfo.trim()
 
+      const requestBody = {
+        trip_id,
+        cabin_id: cabin.id,
+        guests_info: finalGuestsInfo,
+        cabin_status: status,
+        admin_override: true,
+      }
+
+      console.log('📤 Sending request:', requestBody)
+
       // Call create-booking with admin_override
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-booking`,
@@ -68,19 +78,22 @@ export function AdminBookingModal({
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             'X-Telegram-Init-Data': initData,
           },
-          body: JSON.stringify({
-            trip_id,
-            cabin_id: cabin.id,
-            guests_info: finalGuestsInfo,
-            cabin_status: status,
-            admin_override: true,
-          }),
+          body: JSON.stringify(requestBody),
         }
       )
 
-      const data = await response.json()
+      console.log('📥 Response status:', response.status)
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Response error:', errorText)
+        throw new Error(`Server error: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📋 Response data:', data)
+
+      if (!data.success) {
         throw new Error(data.error || 'Failed to update cabin')
       }
 
@@ -90,8 +103,12 @@ export function AdminBookingModal({
         window.location.reload() // Refresh to show updated data
       }, 1500)
     } catch (err) {
-      console.error('Error updating cabin:', err)
-      setError(err instanceof Error ? err.message : 'Не удалось обновить каюту')
+      console.error('❌ Full error:', err)
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Ошибка сети: не удалось подключиться к серверу')
+      } else {
+        setError(err instanceof Error ? err.message : 'Не удалось обновить каюту')
+      }
       setLoading(false)
     }
   }

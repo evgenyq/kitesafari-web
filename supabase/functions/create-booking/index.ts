@@ -103,15 +103,23 @@ serve(async (req) => {
       }
 
       // Find existing active booking for this cabin
-      const { data: existingBooking } = await supabase
+      console.log(`🔍 Looking for existing booking for cabin_id: ${cabin_id}`)
+      const { data: existingBooking, error: findBookingError } = await supabase
         .from('bookings')
         .select('id')
         .eq('cabin_id', cabin_id)
         .eq('booking_status', 'active')
         .maybeSingle()
 
+      if (findBookingError) {
+        console.error('Error finding existing booking:', findBookingError)
+      } else {
+        console.log(`📋 Existing booking: ${existingBooking ? existingBooking.id : 'none'}`)
+      }
+
       const finalStatus = cabin_status || 'Booked'
       const needsBooking = finalStatus !== 'Available' && finalStatus !== 'STAFF'
+      console.log(`📊 Status: ${finalStatus}, needsBooking: ${needsBooking}`)
 
       let booking = null
 
