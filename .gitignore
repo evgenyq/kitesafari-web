@@ -29,6 +29,10 @@ dist-ssr
 .env.local
 # .env.production is committed (contains only public ANON_KEY)
 
+# Sensitive credentials (DO NOT COMMIT!)
+SUPABASE_SECRETS.md
+google_credentials.json
+
 # Build output
 build
 dist

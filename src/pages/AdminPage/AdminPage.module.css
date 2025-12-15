@@ -19,6 +19,40 @@
   margin-top: 0.5rem;
 }
 
+.exportButton {
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--tg-theme-button-color, #28a745);
+  color: var(--tg-theme-button-text-color, white);
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.exportButton:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.exportButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.exportStatus {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  color: var(--tg-theme-text-color, #000);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .loading,
 .error,
 .empty {
