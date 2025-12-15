@@ -25,6 +25,21 @@
   color: var(--tg-theme-hint-color, #666);
 }
 
+.guestsInfo {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--tg-theme-bg-color, #fff);
+  border-left: 3px solid var(--tg-theme-link-color, #3b82f6);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--tg-theme-text-color, #000);
+}
+
+.guestsInfo strong {
+  color: var(--tg-theme-link-color, #3b82f6);
+  margin-right: 4px;
+}
+
 .section {
   display: flex;
   flex-direction: column;

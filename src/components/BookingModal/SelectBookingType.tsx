@@ -109,6 +109,13 @@ export function SelectBookingType({
           <span>•</span>
           <span>€{cabin_price.toFixed(0)}</span>
         </div>
+
+        {/* Show existing guests for Half Available cabins */}
+        {cabin.status === 'Half Available' && cabin.guests && (
+          <div className={styles.guestsInfo}>
+            <strong>👥 С кем вы подселитесь:</strong> {cabin.guests}
+          </div>
+        )}
       </div>
 
       <div className={styles.section}>

@@ -10,9 +10,6 @@ interface CabinRowProps {
 }
 
 export function CabinRow({ cabin, onBookClick }: CabinRowProps) {
-  // Only show guests for Half Available cabins (so users know who's already there)
-  const showGuests = cabin.guests && cabin.status === 'Half Available'
-
   // Cabin is bookable if Available or Half Available
   const isBookable = cabin.status === 'Available' || cabin.status === 'Half Available'
 
@@ -27,7 +24,7 @@ export function CabinRow({ cabin, onBookClick }: CabinRowProps) {
       <div className={styles.status}>
         <StatusBadge status={cabin.status} />
       </div>
-      {showGuests && <div className={styles.guests}>{cabin.guests}</div>}
+      {/* Guest names shown only in booking modal and deck map, not in list */}
       {isBookable && onBookClick && (
         <button
           className={styles.bookButton}
