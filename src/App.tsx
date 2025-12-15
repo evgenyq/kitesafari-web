@@ -47,18 +47,27 @@ function AppContent() {
     loadAllowedTrips()
   }, [isReady, getItem])
 
-  // Handle start_param (invite link)
+  // Handle start_param (invite link) or ?trip= URL parameter
   useEffect(() => {
-    async function handleStartParam() {
-      if (!startParam || !isReady) return
+    async function handleTripParam() {
+      if (!isReady) return
+
+      // Check URL parameter first (for repeated deep links)
+      const searchParams = new URLSearchParams(window.location.search)
+      const tripParam = searchParams.get('trip')
+
+      // Use either URL param or start_param from Telegram
+      const tripCode = tripParam || startParam
+
+      if (!tripCode) return
 
       try {
         // Add trip to allowed list
         const stored = await getItem(STORAGE_KEY)
         const trips = stored ? JSON.parse(stored) : []
 
-        if (!trips.includes(startParam)) {
-          const updatedTrips = [...trips, startParam]
+        if (!trips.includes(tripCode)) {
+          const updatedTrips = [...trips, tripCode]
           await setItem(STORAGE_KEY, JSON.stringify(updatedTrips))
           setAllowedTrips(updatedTrips)
         } else {
@@ -68,14 +77,14 @@ function AppContent() {
 
         // Navigate to trip page (keep history for navigation)
         if (location.pathname === '/' || location.pathname === '/kitesafari-web') {
-          navigate(`/${startParam}`)
+          navigate(`/${tripCode}`)
         }
       } catch (error) {
-        console.error('Error handling start param:', error)
+        console.error('Error handling trip param:', error)
       }
     }
 
-    handleStartParam()
+    handleTripParam()
   }, [startParam, isReady, getItem, setItem, navigate, location.pathname])
 
   // Setup BackButton

@@ -42,9 +42,13 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Handle /start command
+    // Handle /start command with optional parameter
     if (message.text === '/start' || message.text.startsWith('/start')) {
-      await sendMiniAppButton(message.chat.id)
+      // Extract access code from /start access_code
+      const parts = message.text.split(' ')
+      const accessCode = parts.length > 1 ? parts[1] : null
+
+      await sendMiniAppButton(message.chat.id, accessCode)
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'Content-Type': 'application/json' },
       })
@@ -66,19 +70,25 @@ Deno.serve(async (req) => {
   }
 })
 
-async function sendMiniAppButton(chatId: number) {
+async function sendMiniAppButton(chatId: number, accessCode: string | null) {
+  // If access code provided, add it as URL parameter
+  const url = accessCode ? `${MINI_APP_URL}?trip=${accessCode}` : MINI_APP_URL
+  const text = accessCode
+    ? `🏄 Добро пожаловать в KiteSafari!\n\n🎫 У вас есть доступ к новому трипу!\nНажмите кнопку чтобы открыть приложение:`
+    : '🏄 Добро пожаловать в KiteSafari!\n\nВыберите трип и забронируйте каюту:'
+
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      text: '🏄 Добро пожаловать в KiteSafari!\n\nВыберите трип и забронируйте каюту:',
+      text,
       reply_markup: {
         inline_keyboard: [
           [
             {
               text: '🏄 Открыть KiteSafari',
-              web_app: { url: MINI_APP_URL },
+              web_app: { url },
             },
           ],
         ],
