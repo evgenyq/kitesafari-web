@@ -67,12 +67,12 @@ function validateInitData(initData: string): number {
   // Remove hash from params for validation
   urlParams.delete('hash')
 
-  // Check expiration (auth_date should be within last hour)
+  // Check expiration (auth_date should be within last 24 hours)
   const authDate = urlParams.get('auth_date')
   if (authDate) {
     const authTimestamp = parseInt(authDate, 10)
     const now = Math.floor(Date.now() / 1000)
-    const maxAge = 3600 // 1 hour
+    const maxAge = 86400 // 24 hours
 
     if (now - authTimestamp > maxAge) {
       throw new Error('initData expired')

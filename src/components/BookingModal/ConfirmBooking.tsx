@@ -55,9 +55,14 @@ export function ConfirmBooking({
       // Get Telegram user data
       const webApp = window.Telegram?.WebApp
       const telegram_id = webApp?.initDataUnsafe?.user?.id
+      const initData = webApp?.initData
 
       if (!telegram_id) {
         throw new Error('Telegram user ID not found')
+      }
+
+      if (!initData) {
+        throw new Error('Telegram authentication data not found')
       }
 
       // Call Edge Function
@@ -68,6 +73,7 @@ export function ConfirmBooking({
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'X-Telegram-Init-Data': initData,
           },
           body: JSON.stringify({
             trip_id,
