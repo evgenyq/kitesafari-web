@@ -30,9 +30,13 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('[export-to-sheets] Request received')
+
     const { trip_id }: ExportRequest = await req.json()
+    console.log('[export-to-sheets] trip_id:', trip_id)
 
     if (!trip_id) {
+      console.error('[export-to-sheets] Missing trip_id')
       return new Response(
         JSON.stringify({ success: false, error: 'Missing trip_id' }),
         {
@@ -43,13 +47,15 @@ Deno.serve(async (req) => {
     }
 
     // REQUIRED: Validate Telegram authentication and admin privileges
+    console.log('[export-to-sheets] Validating authentication...')
     let authContext
     try {
       authContext = await getAuthContext(req)
+      console.log('[export-to-sheets] Auth successful, user:', authContext.telegramId, 'isAdmin:', authContext.isAdmin)
     } catch (authError) {
-      console.error('Auth error:', authError)
+      console.error('[export-to-sheets] Auth error:', authError)
       return new Response(
-        JSON.stringify({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR' }),
+        JSON.stringify({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR', details: String(authError) }),
         {
           status: 401,
           headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
@@ -59,6 +65,7 @@ Deno.serve(async (req) => {
 
     // Check admin privileges
     if (!authContext.isAdmin) {
+      console.error('[export-to-sheets] User is not admin:', authContext.telegramId)
       return new Response(
         JSON.stringify({ success: false, error: 'Admin privileges required', error_code: 'FORBIDDEN' }),
         {
@@ -67,6 +74,8 @@ Deno.serve(async (req) => {
         }
       )
     }
+
+    console.log('[export-to-sheets] Admin validated, fetching bookings...')
 
     // Fetch bookings data
     const supabase = createClient(
@@ -95,10 +104,14 @@ Deno.serve(async (req) => {
       .order('cabin_number', { ascending: true })
 
     if (fetchError) {
+      console.error('[export-to-sheets] Database error:', fetchError)
       throw fetchError
     }
 
+    console.log('[export-to-sheets] Found bookings:', bookings?.length || 0)
+
     if (!bookings || bookings.length === 0) {
+      console.log('[export-to-sheets] No bookings found for trip:', trip_id)
       return new Response(
         JSON.stringify({ success: false, error: 'No bookings found' }),
         {
@@ -109,7 +122,9 @@ Deno.serve(async (req) => {
     }
 
     // Get Google Sheets access token
+    console.log('[export-to-sheets] Getting Google Sheets access token...')
     const accessToken = await getGoogleAccessToken()
+    console.log('[export-to-sheets] Access token received')
 
     // Prepare data for sheets
     const tripInfo = bookings[0].trips as any
@@ -128,7 +143,9 @@ Deno.serve(async (req) => {
     ]
 
     // Write to Google Sheets
+    console.log('[export-to-sheets] Writing to Google Sheets, sheet:', sheetName, 'rows:', rows.length)
     await writeToGoogleSheets(accessToken, sheetName, rows)
+    console.log('[export-to-sheets] Successfully written to Google Sheets')
 
     return new Response(
       JSON.stringify({
@@ -141,9 +158,15 @@ Deno.serve(async (req) => {
       }
     )
   } catch (error) {
-    console.error('Export error:', error)
+    console.error('[export-to-sheets] Fatal error:', error)
+    console.error('[export-to-sheets] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     return new Response(
-      JSON.stringify({ success: false, error: String(error) }),
+      JSON.stringify({
+        success: false,
+        error: String(error),
+        error_type: error instanceof Error ? error.constructor.name : typeof error,
+        error_message: error instanceof Error ? error.message : String(error)
+      }),
       {
         status: 500,
         headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
