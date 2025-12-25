@@ -52,7 +52,6 @@ export function AdminPage() {
         },
         body: JSON.stringify({
           trip_id: trip.id,
-          telegram_init_data: initData,
         }),
       })
 

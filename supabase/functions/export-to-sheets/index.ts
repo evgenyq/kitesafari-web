@@ -1,6 +1,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
-import { validateTelegramInitData } from '../_shared/auth.ts'
+import { getAuthContext } from '../_shared/auth.ts'
 
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')!
 const GOOGLE_PRIVATE_KEY = Deno.env.get('GOOGLE_PRIVATE_KEY')!
@@ -8,7 +8,6 @@ const GOOGLE_SHEET_ID = Deno.env.get('GOOGLE_SHEET_ID')!
 
 interface ExportRequest {
   trip_id: string
-  telegram_init_data?: string
 }
 
 interface Booking {
@@ -31,7 +30,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { trip_id, telegram_init_data }: ExportRequest = await req.json()
+    const { trip_id }: ExportRequest = await req.json()
 
     if (!trip_id) {
       return new Response(
@@ -43,40 +42,30 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Validate admin access
-    if (telegram_init_data) {
-      const validation = await validateTelegramInitData(telegram_init_data)
-      if (!validation.valid) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid Telegram auth' }),
-          {
-            status: 401,
-            headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
-          }
-        )
-      }
-
-      // Check if user is admin
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    // REQUIRED: Validate Telegram authentication and admin privileges
+    let authContext
+    try {
+      authContext = await getAuthContext(req)
+    } catch (authError) {
+      console.error('Auth error:', authError)
+      return new Response(
+        JSON.stringify({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
+        }
       )
+    }
 
-      const { data: adminUser } = await supabase
-        .from('admin_users')
-        .select('telegram_id')
-        .eq('telegram_id', validation.user.id)
-        .maybeSingle()
-
-      if (!adminUser) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Not authorized' }),
-          {
-            status: 403,
-            headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
-          }
-        )
-      }
+    // Check admin privileges
+    if (!authContext.isAdmin) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Admin privileges required', error_code: 'FORBIDDEN' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     // Fetch bookings data
