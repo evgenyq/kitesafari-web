@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
         booking_status,
         created_at,
         trips (
-          trip_name,
+          name,
           start_date,
           end_date
         )
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
 
     // Prepare data for sheets
     const tripInfo = bookings[0].trips as any
-    const sheetName = `${tripInfo.trip_name} (${tripInfo.start_date})`
+    const sheetName = `${tripInfo.name} (${tripInfo.start_date})`
 
     // Create header row
     const rows = [
