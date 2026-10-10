@@ -2,8 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { corsHeaders } from '../_shared/cors.ts'
 import { getAuthContext } from '../_shared/auth.ts'
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')!
-const GOOGLE_PRIVATE_KEY = Deno.env.get('GOOGLE_PRIVATE_KEY')!
+const GOOGLE_APPS_SCRIPT_URL = Deno.env.get('GOOGLE_APPS_SCRIPT_URL')!
+const GOOGLE_APPS_SCRIPT_SECRET = Deno.env.get('GOOGLE_APPS_SCRIPT_SECRET')!
 const GOOGLE_SHEET_ID = Deno.env.get('GOOGLE_SHEET_ID')!
 
 interface ExportRequest {
@@ -83,37 +83,33 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    const { data: bookings, error: fetchError } = await supabase
-      .from('bookings')
+    // Fetch all cabins for this trip (including available and STAFF)
+    const { data: cabins, error: fetchError } = await supabase
+      .from('cabins')
       .select(`
-        id,
         cabin_number,
-        guests_info,
-        total_price,
-        booking_type,
-        booking_status,
-        created_at,
-        trips (
-          name,
-          start_date,
-          end_date
+        deck,
+        bed_type,
+        price,
+        status,
+        guests,
+        yachts (
+          name
         )
       `)
       .eq('trip_id', trip_id)
-      .eq('booking_status', 'active')
-      .order('cabin_number', { ascending: true })
 
     if (fetchError) {
       console.error('[export-to-sheets] Database error:', fetchError)
       throw fetchError
     }
 
-    console.log('[export-to-sheets] Found bookings:', bookings?.length || 0)
+    console.log('[export-to-sheets] Found cabins:', cabins?.length || 0)
 
-    if (!bookings || bookings.length === 0) {
-      console.log('[export-to-sheets] No bookings found for trip:', trip_id)
+    if (!cabins || cabins.length === 0) {
+      console.log('[export-to-sheets] No cabins found for trip:', trip_id)
       return new Response(
-        JSON.stringify({ success: false, error: 'No bookings found' }),
+        JSON.stringify({ success: false, error: 'No cabins found' }),
         {
           status: 404,
           headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
@@ -121,36 +117,53 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Get Google Sheets access token
-    console.log('[export-to-sheets] Getting Google Sheets access token...')
-    const accessToken = await getGoogleAccessToken()
-    console.log('[export-to-sheets] Access token received')
+    // Get trip info
+    const { data: tripData } = await supabase
+      .from('trips')
+      .select('name, start_date')
+      .eq('id', trip_id)
+      .single()
 
-    // Prepare data for sheets
-    const tripInfo = bookings[0].trips as any
-    const sheetName = `${tripInfo.name} (${tripInfo.start_date})`
+    const sheetName = `${tripData?.name} (${tripData?.start_date})`
 
-    // Create header row
+    // Sort cabins by yacht name and cabin number (as integer)
+    const sortedCabins = [...cabins].sort((a: any, b: any) => {
+      const yachtA = a.yachts?.name || ''
+      const yachtB = b.yachts?.name || ''
+      if (yachtA !== yachtB) {
+        return yachtA.localeCompare(yachtB)
+      }
+      return parseInt(String(a.cabin_number)) - parseInt(String(b.cabin_number))
+    })
+
+    // Create header row with yacht info
     const rows = [
-      ['Каюта', 'Гости', 'Тип бронирования', 'Цена (€)', 'Дата бронирования'],
-      ...bookings.map((b: any) => [
-        b.cabin_number,
-        b.guests_info || '',
-        b.booking_type,
-        b.total_price,
-        new Date(b.created_at).toLocaleDateString('ru-RU'),
-      ]),
+      ['Яхта', 'Номер каюты', 'Палуба', 'Тип каюты', 'Цена (€)', 'Гости'],
+      ...sortedCabins.map((cabin: any) => {
+        const yacht = cabin.yachts
+        const guests = cabin.status === 'STAFF' ? 'STAFF' : (cabin.guests || '')
+        const price = cabin.status === 'STAFF' ? 0 : cabin.price
+
+        return [
+          yacht?.name || '',
+          cabin.cabin_number,
+          cabin.deck || '',
+          cabin.bed_type || '',
+          price,
+          guests,
+        ]
+      }),
     ]
 
-    // Write to Google Sheets
-    console.log('[export-to-sheets] Writing to Google Sheets, sheet:', sheetName, 'rows:', rows.length)
-    await writeToGoogleSheets(accessToken, sheetName, rows)
-    console.log('[export-to-sheets] Successfully written to Google Sheets')
+    // Write to Google Sheets via Apps Script
+    console.log('[export-to-sheets] Calling Google Apps Script, sheet:', sheetName, 'rows:', rows.length)
+    const result = await writeToGoogleSheets(sheetName, rows)
+    console.log('[export-to-sheets] Successfully written to Google Sheets via Apps Script')
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Exported ${bookings.length} bookings to Google Sheets`,
+        message: `Exported ${cabins.length} cabins to Google Sheets`,
         sheet_url: `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`,
       }),
       {
@@ -175,142 +188,37 @@ Deno.serve(async (req) => {
   }
 })
 
-async function getGoogleAccessToken(): Promise<string> {
-  // Create JWT for Google OAuth
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT',
-  }
+async function writeToGoogleSheets(
+  sheetName: string,
+  rows: any[][]
+): Promise<string> {
+  console.log('[export-to-sheets] Calling Google Apps Script webhook...')
 
-  const now = Math.floor(Date.now() / 1000)
-  const claim = {
-    iss: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/spreadsheets',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  }
-
-  // Encode JWT
-  const encoder = new TextEncoder()
-  const headerB64 = btoa(JSON.stringify(header))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-  const claimB64 = btoa(JSON.stringify(claim))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-
-  const signatureInput = `${headerB64}.${claimB64}`
-
-  // Import private key
-  const privateKeyPem = GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
-  const pemHeader = '-----BEGIN PRIVATE KEY-----'
-  const pemFooter = '-----END PRIVATE KEY-----'
-  const pemContents = privateKeyPem.substring(
-    pemHeader.length,
-    privateKeyPem.length - pemFooter.length
-  ).replace(/\s/g, '')
-
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
-
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryDer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-
-  // Sign JWT
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    encoder.encode(signatureInput)
-  )
-
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-
-  const jwt = `${signatureInput}.${signatureB64}`
-
-  // Exchange JWT for access token
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      secret: GOOGLE_APPS_SCRIPT_SECRET,
+      sheetName,
+      rows,
     }),
   })
 
-  const data = await response.json()
-  return data.access_token
-}
-
-async function writeToGoogleSheets(
-  accessToken: string,
-  sheetName: string,
-  rows: any[][]
-) {
-  // First, try to create the sheet (if it doesn't exist)
-  try {
-    await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}:batchUpdate`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requests: [
-            {
-              addSheet: {
-                properties: {
-                  title: sheetName,
-                },
-              },
-            },
-          ],
-        }),
-      }
-    )
-  } catch (error) {
-    // Sheet might already exist, continue
-    console.log('Sheet might already exist:', error)
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('[export-to-sheets] Apps Script error:', response.status, errorText)
+    throw new Error(`Apps Script failed: ${response.status} ${errorText}`)
   }
 
-  // Clear existing data and write new data
-  const range = `${sheetName}!A1:Z1000`
+  const result = await response.json()
 
-  // Clear
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${encodeURIComponent(range)}:clear`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  )
+  if (!result.success) {
+    console.error('[export-to-sheets] Apps Script returned error:', result.error)
+    throw new Error(`Apps Script error: ${result.error}`)
+  }
 
-  // Write
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: rows,
-      }),
-    }
-  )
+  console.log('[export-to-sheets] Data written via Apps Script, URL:', result.sheetUrl)
+  return result.sheetUrl
 }
