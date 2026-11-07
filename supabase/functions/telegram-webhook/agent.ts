@@ -9,6 +9,8 @@ const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-6.1-terra'
 const MAX_STEPS = 8
 const HISTORY = 30
+const CONVERSATION_GAP_MS = 12 * 3600_000 // after 12 h of silence the next message starts a new conversation
+export const NEW_CONVERSATION = 'Новый разговор (/new)' // event text that cuts the history
 const MAX_TOOL_OUTPUT = 30_000 // chars per tool result
 const MODEL_TIMEOUT_MS = 60_000
 const TURN_BUDGET_MS = 110_000 // under the 150 s Edge Function wall clock (free plan)
@@ -247,10 +249,10 @@ function toolOutput(result: unknown): string {
 export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
   const started = Date.now()
   const { data: rows, error } = await ctx.db
-    .from('bot_messages').select('role, text').eq('chat_id', ctx.chatId).lte('id', upToId)
+    .from('bot_messages').select('role, text, created_at').eq('chat_id', ctx.chatId).lte('id', upToId)
     .order('id', { ascending: false }).limit(HISTORY)
   if (error) throw error
-  const input: InputItem[] = (rows ?? []).reverse().map((r) =>
+  const input: InputItem[] = conversation(rows ?? []).map((r) =>
     r.role === 'event' ? { role: 'developer', content: `[событие] ${r.text}` } : { role: r.role, content: r.text })
 
   const instr = instructions(ctx, await buildContext(ctx.db, ctx.chatId))
@@ -280,6 +282,23 @@ export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
     }
   }
   return ctx.cardSent ? '' : 'Слишком долго думал и остановился. Переформулируйте или разбейте на части.'
+}
+
+/**
+ * The current conversation out of the newest-first rows: stops at a /new marker or at a silence longer
+ * than CONVERSATION_GAP_MS. Durable memory lives in cabins/notes, so forgetting the chat is safe.
+ */
+function conversation(newestFirst: { role: string; text: string; created_at: string }[]) {
+  const kept: typeof newestFirst = []
+  let newer = Date.now()
+  for (const row of newestFirst) {
+    if (row.role === 'event' && row.text === NEW_CONVERSATION) break
+    const at = Date.parse(row.created_at)
+    if (newer - at > CONVERSATION_GAP_MS) break
+    kept.push(row)
+    newer = at
+  }
+  return kept.reverse()
 }
 
 /** Replies go out without parse_mode; drop Markdown the model may still produce so no stray ** or # show up. */

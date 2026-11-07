@@ -1,5 +1,6 @@
 // Edge Function: telegram-webhook — the @kitesafaribot entry point.
 //   /start [access_code]   → anyone: button that opens the Mini App
+//   /new (admins)          → start a fresh conversation (also automatic after 12 h of silence)
 //   admin text / forwards  → agent (agent.ts): reads the DB, proposes changes as cards
 //   card buttons           → apply / cancel a proposal (proposals.ts)
 // Telegram must send X-Telegram-Bot-Api-Secret-Token == TELEGRAM_WEBHOOK_SECRET (set via setWebhook);
@@ -9,7 +10,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { sendText, tg } from '../_shared/telegram.ts'
-import { runAgent } from './agent.ts'
+import { NEW_CONVERSATION, runAgent } from './agent.ts'
 import { resolveProposal } from './proposals.ts'
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
@@ -77,6 +78,11 @@ Deno.serve(async (req) => {
       return ok()
     }
 
+    if (!message.forward_origin && /^\/(new|reset)\b/.test(text)) {
+      EdgeRuntime.waitUntil(startNewConversation(db, message.chat.id).catch((e) => console.error('new:', e)))
+      return ok()
+    }
+
     if (message.voice || message.audio) {
       EdgeRuntime.waitUntil(sendText(message.chat.id, 'Голосовые научусь понимать совсем скоро — пока напишите текстом.').catch(() => {}))
       return ok()
@@ -105,6 +111,13 @@ Deno.serve(async (req) => {
     return ok() // never make Telegram retry a broken update forever
   }
 })
+
+/** /new: the model stops seeing earlier messages (rows stay for debugging); a waiting card stops working. */
+async function startNewConversation(db: SupabaseClient, chatId: number) {
+  await db.from('bot_messages').insert({ chat_id: chatId, role: 'event', text: NEW_CONVERSATION })
+  await db.from('bot_proposals').update({ status: 'superseded', resolved_at: new Date().toISOString() }).eq('chat_id', chatId).eq('status', 'pending')
+  await sendText(chatId, 'Начали с чистого листа: переписку я забыл, неподтверждённая карточка больше не действует. Каюты и записная книжка на месте.')
+}
 
 async function isAdmin(db: SupabaseClient, telegramId: number): Promise<boolean> {
   const { data } = await db.from('admin_users').select('telegram_id').eq('telegram_id', telegramId).maybeSingle()
