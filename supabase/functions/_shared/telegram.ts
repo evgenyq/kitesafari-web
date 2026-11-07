@@ -1,0 +1,28 @@
+// Minimal Telegram Bot API client for Edge Functions.
+
+const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
+const MAX_TEXT = 4000 // Telegram limit is 4096
+
+export async function tg<T = any>(method: string, body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await response.json()
+  if (!data.ok) throw new Error(`Telegram ${method}: ${data.description}`)
+  return data.result
+}
+
+export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** Plain text message, split if too long. Returns the last sent message id. */
+export async function sendText(chatId: number, text: string): Promise<number> {
+  let last = 0
+  for (let i = 0; i < text.length; i += MAX_TEXT) {
+    last = (await tg('sendMessage', { chat_id: chatId, text: text.slice(i, i + MAX_TEXT) })).message_id
+  }
+  return last
+}
+
+export type InlineButton = { text: string; callback_data: string }
