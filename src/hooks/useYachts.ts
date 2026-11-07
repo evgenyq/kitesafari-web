@@ -21,7 +21,7 @@ export function useYachts(tripId: string | undefined): UseDataResult<YachtWithSt
         // Fetch all cabins for the trip with yacht info
         const { data: cabins, error: fetchError } = await supabase
           .from('cabins')
-          .select('*, yachts(*)')
+          .select('status, yachts(*)')
           .eq('trip_id', tripId)
 
         if (fetchError) throw fetchError

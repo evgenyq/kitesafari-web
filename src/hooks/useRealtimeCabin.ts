@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { PUBLIC_CABIN_COLUMNS } from '../lib/cabinGuests'
 import type { Cabin, CabinStatus } from '../types'
 
 interface RealtimeCabinState {
@@ -10,9 +11,12 @@ interface RealtimeCabinState {
   error: Error | null
 }
 
+const POLL_INTERVAL_MS = 5000
+
 /**
- * Hook to monitor cabin status changes in real-time
- * Subscribes to Supabase Realtime updates for a specific cabin
+ * Hook to monitor cabin status changes while the booking modal is open
+ * Polls the cabin every POLL_INTERVAL_MS. Supabase Realtime is off for cabins:
+ * its payload would include guest names (see migration 008).
  *
  * Usage:
  * ```tsx
@@ -48,30 +52,31 @@ export function useRealtimeCabin(cabin_id: string | null): RealtimeCabinState {
     }
 
     let initialStatus: CabinStatus | null = null
+    let cancelled = false
 
-    // Fetch initial cabin data
-    const fetchInitialCabin = async () => {
+    const fetchCabin = async () => {
       try {
         const { data, error } = await supabase
           .from('cabins')
-          .select('*')
+          .select(PUBLIC_CABIN_COLUMNS)
           .eq('id', cabin_id)
-          .single<Cabin>()
+          .single<Omit<Cabin, 'guests'>>()
 
         if (error) throw error
+        if (cancelled || !data) return
 
-        if (data) {
-          initialStatus = data.status
-          setState({
-            cabin: data,
-            status: data.status,
-            isStatusChanged: false,
-            isLoading: false,
-            error: null,
-          })
-        }
+        if (initialStatus === null) initialStatus = data.status
+
+        setState({
+          cabin: { ...data, guests: null },
+          status: data.status,
+          isStatusChanged: data.status !== initialStatus,
+          isLoading: false,
+          error: null,
+        })
       } catch (err) {
         console.error('Error fetching cabin:', err)
+        if (cancelled) return
         setState((prev) => ({
           ...prev,
           isLoading: false,
@@ -80,45 +85,12 @@ export function useRealtimeCabin(cabin_id: string | null): RealtimeCabinState {
       }
     }
 
-    fetchInitialCabin()
+    fetchCabin()
+    const timer = setInterval(fetchCabin, POLL_INTERVAL_MS)
 
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel(`cabin-${cabin_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'cabins',
-          filter: `id=eq.${cabin_id}`,
-        },
-        (payload) => {
-          console.log('Realtime cabin update:', payload)
-
-          const newCabin = payload.new as Cabin
-          const newStatus = newCabin.status
-
-          // Check if status actually changed from initial
-          const statusChanged = initialStatus !== null && newStatus !== initialStatus
-
-          setState({
-            cabin: newCabin,
-            status: newStatus,
-            isStatusChanged: statusChanged,
-            isLoading: false,
-            error: null,
-          })
-        }
-      )
-      .subscribe((status) => {
-        console.log(`Realtime subscription status for cabin ${cabin_id}:`, status)
-      })
-
-    // Cleanup subscription on unmount or cabin_id change
     return () => {
-      console.log(`Unsubscribing from cabin ${cabin_id}`)
-      supabase.removeChannel(channel)
+      cancelled = true
+      clearInterval(timer)
     }
   }, [cabin_id])
 

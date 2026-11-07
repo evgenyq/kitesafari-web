@@ -10,7 +10,6 @@ import type { CreateBookingRequest, CreateBookingResponse, CabinData, BookingTyp
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const BOT_WEBHOOK_URL = Deno.env.get('BOT_WEBHOOK_URL') // Optional webhook for admin notifications
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -434,30 +433,6 @@ serve(async (req) => {
         }),
         { status: 409, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
       )
-    }
-
-    // Step 7: Send webhook notification to bot (optional, non-blocking)
-    if (BOT_WEBHOOK_URL) {
-      try {
-        await fetch(BOT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'booking_created',
-            booking_id,
-            telegram_id,
-            telegram_handle,
-            full_name,
-            cabin_number: cabin.cabin_number,
-            deck: cabin.deck,
-            booking_type,
-            total_amount,
-          }),
-        })
-      } catch (webhookError) {
-        // Log but don't fail the booking if webhook fails
-        console.error('Webhook notification failed:', webhookError)
-      }
     }
 
     // Success!

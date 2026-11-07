@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { PUBLIC_CABIN_COLUMNS, fetchCabinGuests } from '../lib/cabinGuests'
 import type { Cabin, Yacht } from '../types'
 
 interface CabinsByYacht {
@@ -27,11 +28,14 @@ export function useAllCabins(tripId: string | undefined) {
         setError(null)
 
         // Fetch all cabins with yacht info (NO STATUS FILTER for admin)
-        const { data: cabins, error: fetchError } = await supabase
-          .from('cabins')
-          .select('*, yachts(*)')
-          .eq('trip_id', tripId)
-          .order('cabin_number', { ascending: true })
+        const [{ data: cabins, error: fetchError }, guestsById] = await Promise.all([
+          supabase
+            .from('cabins')
+            .select(`${PUBLIC_CABIN_COLUMNS}, yachts(*)`)
+            .eq('trip_id', tripId)
+            .order('cabin_number', { ascending: true }),
+          fetchCabinGuests(tripId),
+        ])
 
         if (fetchError) throw fetchError
 
@@ -67,7 +71,7 @@ export function useAllCabins(tripId: string | undefined) {
             bed_type: cabin.bed_type,
             price: cabin.price,
             status: cabin.status,
-            guests: cabin.guests,
+            guests: guestsById[cabin.id] ?? null,
             max_guests: cabin.max_guests,
             created_at: cabin.created_at,
             updated_at: cabin.updated_at,
