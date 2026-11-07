@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { createProposal, STATUSES, STATUS_RU, type ProposalInput } from './proposals.ts'
+import { tokenCost } from './costs.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-6.1-terra'
@@ -248,18 +249,61 @@ function toolOutput(result: unknown): string {
  */
 export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
   const started = Date.now()
+  const trace = { steps: [] as Record<string, unknown>[], input: 0, cached: 0, output: 0 }
+  let reply = ''
+  let failure: unknown = null
+  try {
+    reply = await agentTurn(ctx, upToId, started, trace)
+    return reply
+  } catch (err) {
+    failure = err
+    throw err
+  } finally {
+    // Run log: never let logging break the reply
+    const { error } = await ctx.db.from('bot_runs').insert({
+      chat_id: ctx.chatId,
+      kind: 'agent',
+      message_id: upToId,
+      model: MODEL,
+      duration_ms: Date.now() - started,
+      steps: trace.steps,
+      input_tokens: trace.input,
+      cached_tokens: trace.cached,
+      output_tokens: trace.output,
+      cost_usd: tokenCost(MODEL, trace.input, trace.cached, trace.output),
+      result: ctx.cardPlain ? `[карточка]\n${ctx.cardPlain}${reply ? `\n\n${reply}` : ''}` : reply,
+      error: failure ? String(failure).slice(0, 2000) : null,
+    })
+    if (error) console.error('bot_runs insert:', error)
+  }
+}
+
+type Trace = { steps: Record<string, unknown>[]; input: number; cached: number; output: number }
+
+async function agentTurn(ctx: Ctx, upToId: number, started: number, trace: Trace): Promise<string> {
   const { data: rows, error } = await ctx.db
     .from('bot_messages').select('role, text, created_at').eq('chat_id', ctx.chatId).lte('id', upToId)
     .order('id', { ascending: false }).limit(HISTORY)
   if (error) throw error
   const input: InputItem[] = conversation(rows ?? []).map((r) =>
     r.role === 'event' ? { role: 'developer', content: `[событие] ${r.text}` } : { role: r.role, content: r.text })
+  trace.steps.push({ type: 'history', messages: input.length })
 
   const instr = instructions(ctx, await buildContext(ctx.db, ctx.chatId))
   for (let step = 0; step < MAX_STEPS; step++) {
     const left = TURN_BUDGET_MS - (Date.now() - started)
     if (left < 10_000) break
+    const t = Date.now()
     const res = await callModel(instr, input, Math.min(left, MODEL_TIMEOUT_MS))
+    const usage = res.usage ?? {}
+    trace.input += usage.input_tokens ?? 0
+    trace.cached += usage.input_tokens_details?.cached_tokens ?? 0
+    trace.output += usage.output_tokens ?? 0
+    trace.steps.push({
+      type: 'model', ms: Date.now() - t, status: res.status,
+      input_tokens: usage.input_tokens, cached_tokens: usage.input_tokens_details?.cached_tokens,
+      output_tokens: usage.output_tokens, reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+    })
     const calls = res.output.filter((o: any) => o.type === 'function_call')
     if (!calls.length) {
       const text = res.output.filter((o: any) => o.type === 'message')
@@ -267,22 +311,28 @@ export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
       if (ctx.cardSent) return '' // the card speaks for itself; extra text arrives after the card and confuses
       if (text) return plainText(text)
       if (res.status === 'incomplete') return 'Не успел додумать ответ. Попробуйте короче или по частям.'
-      return ctx.cardSent ? '' : 'Не понял, что сделать. Переформулируйте, пожалуйста.'
+      return 'Не понял, что сделать. Переформулируйте, пожалуйста.'
     }
     input.push(...res.output)
     for (const call of calls) {
+      const tt = Date.now()
       let result: unknown
+      let args: unknown = null
       try {
-        result = await runTool(ctx, call.name, JSON.parse(call.arguments || '{}'))
+        args = JSON.parse(call.arguments || '{}')
+        result = await runTool(ctx, call.name, args)
       } catch (err) {
         console.error(`tool ${call.name}:`, err)
         result = { error: String(err) }
       }
-      input.push({ type: 'function_call_output', call_id: call.call_id, output: toolOutput(result) })
+      const output = toolOutput(result)
+      trace.steps.push({ type: 'tool', name: call.name, args, ms: Date.now() - tt, result_chars: output.length, result_preview: output.slice(0, 800) })
+      input.push({ type: 'function_call_output', call_id: call.call_id, output })
     }
   }
   return ctx.cardSent ? '' : 'Слишком долго думал и остановился. Переформулируйте или разбейте на части.'
 }
+
 
 /**
  * The current conversation out of the newest-first rows: stops at a /new marker or at a silence longer

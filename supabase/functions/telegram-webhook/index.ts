@@ -1,7 +1,8 @@
 // Edge Function: telegram-webhook — the @kitesafaribot entry point.
 //   /start [access_code]   → anyone: button that opens the Mini App
 //   /new (admins)          → start a fresh conversation (also automatic after 12 h of silence)
-//   admin text / forwards  → agent (agent.ts): reads the DB, proposes changes as cards
+//   admin text / voice / forwards → agent (agent.ts): reads the DB, proposes changes as cards; voice is
+//                          transcribed first (voice.ts) and echoed back as «🎤 …»
 //   card buttons           → apply / cancel a proposal (proposals.ts)
 // Telegram must send X-Telegram-Bot-Api-Secret-Token == TELEGRAM_WEBHOOK_SECRET (set via setWebhook);
 // without the secret configured the function refuses everything (fail closed).
@@ -12,6 +13,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import { sendText, tg } from '../_shared/telegram.ts'
 import { NEW_CONVERSATION, runAgent } from './agent.ts'
 import { resolveProposal } from './proposals.ts'
+import { MAX_VOICE_SECONDS, transcribe } from './voice.ts'
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
@@ -27,8 +29,8 @@ interface TgMessage {
   chat: { id: number; type: string }
   text?: string
   caption?: string
-  voice?: unknown
-  audio?: unknown
+  voice?: { file_id: string; duration: number }
+  audio?: { file_id: string; duration: number }
   entities?: unknown[]
   forward_origin?: { type: string; sender_user?: TgUser; sender_user_name?: string; chat?: { title?: string }; date: number }
 }
@@ -83,8 +85,21 @@ Deno.serve(async (req) => {
       return ok()
     }
 
-    if (message.voice || message.audio) {
-      EdgeRuntime.waitUntil(sendText(message.chat.id, 'Голосовые научусь понимать совсем скоро — пока напишите текстом.').catch(() => {}))
+    const voice = message.voice ?? message.audio
+    if (voice) {
+      if (voice.duration > MAX_VOICE_SECONDS) {
+        EdgeRuntime.waitUntil(sendText(message.chat.id, `Голосовое длиннее ${MAX_VOICE_SECONDS / 60} минут — разбейте, пожалуйста, на части.`).catch(() => {}))
+        return ok()
+      }
+      // Placeholder row (processed) claims the Telegram message id against re-deliveries; text comes after transcription
+      const { data: row, error } = await db
+        .from('bot_messages')
+        .upsert({ chat_id: message.chat.id, tg_message_id: message.message_id, role: 'user', text: '[Голосовое — распознаю…]', processed: true },
+          { onConflict: 'chat_id,tg_message_id', ignoreDuplicates: true })
+        .select('id')
+      if (error) console.error('bot_messages voice insert:', error)
+      if (!row?.length) return ok()
+      EdgeRuntime.waitUntil(handleVoice(db, message, voice, row[0].id))
       return ok()
     }
     if (!text.trim()) return ok()
@@ -111,6 +126,22 @@ Deno.serve(async (req) => {
     return ok() // never make Telegram retry a broken update forever
   }
 })
+
+/** Voice → transcript shown back to the admin ("🎤 …"), then handled exactly like a text message. */
+async function handleVoice(db: SupabaseClient, message: TgMessage, voice: { file_id: string; duration: number }, rowId: number) {
+  const chatId = message.chat.id
+  try {
+    await tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {})
+    const transcript = await transcribe(db, chatId, rowId, voice.file_id, voice.duration)
+    await db.from('bot_messages').update({ text: describeIncoming(message, `[Голосовое] ${transcript}`), processed: false }).eq('id', rowId)
+    await sendText(chatId, `🎤 ${transcript}`)
+    await work(db, chatId, message.from!)
+  } catch (err) {
+    console.error('voice:', err)
+    await db.from('bot_messages').update({ text: '[Голосовое — не удалось распознать]' }).eq('id', rowId)
+    await sendText(chatId, 'Не смог распознать голосовое. Попробуйте ещё раз или напишите текстом.').catch(() => {})
+  }
+}
 
 /** /new: the model stops seeing earlier messages (rows stay for debugging); a waiting card stops working. */
 async function startNewConversation(db: SupabaseClient, chatId: number) {

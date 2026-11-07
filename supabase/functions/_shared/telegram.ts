@@ -27,3 +27,11 @@ export async function sendText(chatId: number, text: string): Promise<number> {
 }
 
 export type InlineButton = { text: string; callback_data: string }
+
+/** Download a file the bot received (voice, audio). Bot API serves files up to 20 MB. */
+export async function downloadFile(fileId: string): Promise<Blob> {
+  const file = await tg<{ file_path: string }>('getFile', { file_id: fileId })
+  const response = await fetch(`${API_BASE}/file/bot${BOT_TOKEN}/${file.file_path}`)
+  if (!response.ok) throw new Error(`Telegram file download ${response.status}`)
+  return response.blob()
+}
