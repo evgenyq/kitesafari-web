@@ -197,7 +197,7 @@ function instructions(ctx: Ctx, snapshot: string): string {
 Задача: принимать бесформенные просьбы (текст, пересланные сообщения гостей) и превращать их в действия: переселения, брони, вейтлист, договорённости с датами, ответы на вопросы о турах.
 
 Правила:
-- Отвечай по-русски, коротко, без воды. Не пиши «сделано», пока организатор не нажал «Ок» — сначала карточка.
+- Отвечай по-русски, коротко, без воды. Пиши обычным текстом для Telegram: без Markdown (никаких **, #, таблиц); списки — строками с «•» или «—». Не пиши «сделано», пока организатор не нажал «Ок» — сначала карточка.
 - Любое изменение кают или записной книжки — только через инструмент propose. Ничего не меняй молча.
 - Если неясно, кто имелся в виду (две Ани, человек без ника, непонятный тур) — сначала посмотри данные (search_people, read_table), и только если всё равно неоднозначно — переспроси одним коротким вопросом с вариантами.
 - Текст «кто живёт» в каюте — свободный, обычно «@ник Имя Фамилия, …» через запятую, бывают «+ ребёнок», «STAFF». При правке сохраняй остальных жильцов дословно.
@@ -257,7 +257,7 @@ export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
     if (!calls.length) {
       const text = res.output.filter((o: any) => o.type === 'message')
         .flatMap((m: any) => m.content.filter((c: any) => c.type === 'output_text').map((c: any) => c.text)).join('\n').trim()
-      if (text) return text
+      if (text) return plainText(text)
       if (res.status === 'incomplete') return 'Не успел додумать ответ. Попробуйте короче или по частям.'
       return ctx.cardSent ? '' : 'Не понял, что сделать. Переформулируйте, пожалуйста.'
     }
@@ -274,4 +274,13 @@ export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
     }
   }
   return ctx.cardSent ? '' : 'Слишком долго думал и остановился. Переформулируйте или разбейте на части.'
+}
+
+/** Replies go out without parse_mode; drop Markdown the model may still produce so no stray ** or # show up. */
+function plainText(s: string): string {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '• ')
 }
