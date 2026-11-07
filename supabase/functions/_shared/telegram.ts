@@ -1,10 +1,11 @@
 // Minimal Telegram Bot API client for Edge Functions.
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
+const API_BASE = Deno.env.get('TELEGRAM_API_BASE') || 'https://api.telegram.org' // overridden only by the local test harness
 const MAX_TEXT = 4000 // Telegram limit is 4096
 
 export async function tg<T = any>(method: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+  const response = await fetch(`${API_BASE}/bot${BOT_TOKEN}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
