@@ -34,7 +34,7 @@ const blankToNull = (s: string | null | undefined) => (s && s.trim() ? s.trim() 
  * Validate, store and send a proposal card. Returns a short result for the model;
  * anything invalid comes back as an error text so the model can fix it instead of producing a broken card.
  */
-export async function createProposal(db: SupabaseClient, chatId: number, adminId: number, input: ProposalInput): Promise<{ text: string; cardSent: boolean }> {
+export async function createProposal(db: SupabaseClient, chatId: number, adminId: number, input: ProposalInput): Promise<{ text: string; cardSent: boolean; cardPlain?: string }> {
   const fail = (text: string) => ({ text: `Ошибка: ${text} Карточка не отправлена — исправь и предложи заново.`, cardSent: false })
   const actions: Record<string, unknown>[] = []
   const lines: string[] = [`<b>${escapeHtml(input.summary)}</b>`, '']
@@ -135,7 +135,8 @@ export async function createProposal(db: SupabaseClient, chatId: number, adminId
   await db.from('bot_proposals').update({ status: 'superseded', resolved_at: new Date().toISOString() })
     .eq('chat_id', chatId).eq('status', 'pending').neq('id', proposal.id)
 
-  return { text: 'Карточка отправлена, ждём «Ок». Не пересказывай её содержание.', cardSent: true }
+  const cardPlain = cardText.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  return { text: 'Карточка отправлена, ждём «Ок». Больше ничего не пиши.', cardSent: true, cardPlain }
 }
 
 export interface CardMessage { chatId: number; messageId: number; text: string; entities?: unknown[]; accessible: boolean }
@@ -178,7 +179,7 @@ export async function resolveProposal(db: SupabaseClient, proposalId: string, de
       return null
     }
     await finish('✖️ Отменено')
-    return `Организатор отменил карточку «${proposal.summary}».`
+    return `Организатор нажал «Отмена», ничего не изменено:\n${card.text}`
   }
 
   const { data: result, error: applyError } = await db.rpc('bot_apply_proposal', { p_id: proposalId, p_actor: `bot:${adminId}` })
@@ -186,7 +187,7 @@ export async function resolveProposal(db: SupabaseClient, proposalId: string, de
 
   if (result.status === 'applied') {
     await finish('✅ Применено')
-    return `Применено: «${proposal.summary}».`
+    return `Организатор нажал «Ок», в базу записано:\n${card.text}`
   }
   if (result.status === 'conflict') {
     const details = await describeConflicts(db, result.conflicts)

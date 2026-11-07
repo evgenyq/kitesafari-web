@@ -110,7 +110,7 @@ export const TOOLS = [
   },
 ]
 
-interface Ctx { db: SupabaseClient; chatId: number; adminId: number; adminName: string; cardSent?: boolean }
+export interface Ctx { db: SupabaseClient; chatId: number; adminId: number; adminName: string; cardSent?: boolean; cardPlain?: string }
 
 const FILTER_OPS = new Set(['eq', 'neq', 'ilike', 'gt', 'gte', 'lt', 'lte'])
 
@@ -154,7 +154,10 @@ async function runTool(ctx: Ctx, name: string, args: any): Promise<unknown> {
   if (name === 'search_people') return searchPeople(ctx.db, args.query ?? '')
   if (name === 'propose') {
     const result = await createProposal(ctx.db, ctx.chatId, ctx.adminId, args as ProposalInput)
-    if (result.cardSent) ctx.cardSent = true
+    if (result.cardSent) {
+      ctx.cardSent = true
+      ctx.cardPlain = result.cardPlain
+    }
     return result.text
   }
   return { error: `Неизвестный инструмент ${name}` }
@@ -203,6 +206,8 @@ function instructions(ctx: Ctx, snapshot: string): string {
 - Текст «кто живёт» в каюте — свободный, обычно «@ник Имя Фамилия, …» через запятую, бывают «+ ребёнок», «STAFF». При правке сохраняй остальных жильцов дословно.
 - Статусы кают: ${STATUSES.map((s) => `${s} (${STATUS_RU[s]})`).join(', ')}. Если в каюте после правки никого — обычно Available; один человек в двухместной — обычно Half Available; спроси, если не очевидно.
 - Пересланное сообщение гостя — это просьба гостя: пойми, кто это и чего он хочет, и предложи действие (часто — запись в вейтлист нужного тура).
+- Раздел «Каюты» ниже — состояние базы прямо сейчас, уже с учётом всех применённых карточек. Если твой прошлый ответ ему противоречит — права база, а не история.
+- После propose ничего не пиши: карточка говорит сама за себя.
 - Кому отдать освободившееся место, решает только организатор: показывай кандидатов из книжки и порядок поступления, не выбирай сам.
 - Записи книжки пиши самодостаточно: кто (ник), с кем, чего хочет, какой тур, откуда пришло, дата.
 
@@ -257,6 +262,7 @@ export async function runAgent(ctx: Ctx, upToId: number): Promise<string> {
     if (!calls.length) {
       const text = res.output.filter((o: any) => o.type === 'message')
         .flatMap((m: any) => m.content.filter((c: any) => c.type === 'output_text').map((c: any) => c.text)).join('\n').trim()
+      if (ctx.cardSent) return '' // the card speaks for itself; extra text arrives after the card and confuses
       if (text) return plainText(text)
       if (res.status === 'incomplete') return 'Не успел додумать ответ. Попробуйте короче или по частям.'
       return ctx.cardSent ? '' : 'Не понял, что сделать. Переформулируйте, пожалуйста.'

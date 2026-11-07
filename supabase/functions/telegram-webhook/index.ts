@@ -144,13 +144,16 @@ async function work(db: SupabaseClient, chatId: number, from: TgUser) {
       if (pending?.length) {
         const ids = pending.map((m) => m.id)
         await tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {})
+        const ctx: Parameters<typeof runAgent>[0] = { db, chatId, adminId: from.id, adminName }
         let reply: string
         try {
-          reply = await runAgent({ db, chatId, adminId: from.id, adminName }, ids[ids.length - 1])
+          reply = await runAgent(ctx, ids[ids.length - 1])
         } catch (err) {
           console.error('agent:', err)
           reply = 'Что-то сломалось, не смог обработать. Попробуйте ещё раз — или переформулируйте.'
         }
+        // The model's next turn must know exactly what the card said, not just that one was sent
+        if (ctx.cardPlain) await db.from('bot_messages').insert({ chat_id: chatId, role: 'assistant', text: `[Отправил карточку на подтверждение]\n${ctx.cardPlain}` })
         if (reply) {
           await sendText(chatId, reply)
           await db.from('bot_messages').insert({ chat_id: chatId, role: 'assistant', text: reply })
