@@ -1,6 +1,8 @@
 // Edge Function: create-booking
-// Purpose: Create cabin booking with Optimistic Locking for race condition protection
-// Supports admin override mode for rebooking any cabin
+// Purpose: Book a cabin from the mini-app (optimistic locking against races)
+// or let an admin set a cabin's guests/status directly (admin override).
+// cabins is the only source of truth; who/when lands in cabin_changes via a trigger
+// (we set cabins.changed_by), mini-app booking details go to notes.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
@@ -11,23 +13,31 @@ import type { CreateBookingRequest, CreateBookingResponse, CabinData, BookingTyp
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+const BOOKING_TYPE_LABELS: Record<BookingType, string> = {
+  full_single: 'каюта целиком, один',
+  full_double: 'каюта целиком, вдвоём',
+  half: 'половина каюты',
+  join: 'подселение',
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   const corsResponse = handleCors(req)
   if (corsResponse) return corsResponse
 
+  const headers = { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' }
+  const reply = (body: CreateBookingResponse & Record<string, unknown>, status: number) =>
+    new Response(JSON.stringify(body), { status, headers })
+
   try {
     // Only allow POST
     if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Method not allowed' }),
-        { status: 405, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: false, error: 'Method not allowed' }, 405)
     }
 
     // Parse request body
     const body: CreateBookingRequest = await req.json()
-    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details, admin_override, cabin_status } = body
+    const { trip_id, cabin_id, telegram_id, telegram_handle, full_name, booking_type, guests_info, payer_details, admin_override, cabin_status, expected_updated_at } = body
 
     // Get auth context (validates initData and checks admin status)
     let authContext
@@ -35,18 +45,12 @@ serve(async (req) => {
       authContext = await getAuthContext(req)
     } catch (authError) {
       console.error('Auth error:', authError)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR' }),
-        { status: 401, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: false, error: 'Authentication failed', error_code: 'AUTH_ERROR' }, 401)
     }
 
     // Check admin privileges if admin_override requested
     if (admin_override && !authContext.isAdmin) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Admin privileges required', error_code: 'FORBIDDEN' }),
-        { status: 403, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: false, error: 'Admin privileges required', error_code: 'FORBIDDEN' }, 403)
     }
 
     // Validate required fields (different for admin vs normal)
@@ -54,27 +58,17 @@ serve(async (req) => {
       // Admin mode: only need cabin_id, trip_id
       // guests_info is optional - can be empty for Available/STAFF statuses
       if (!trip_id || !cabin_id) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Missing required fields for admin mode', error_code: 'VALIDATION_ERROR' }),
-          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+        return reply({ success: false, error: 'Missing required fields for admin mode', error_code: 'VALIDATION_ERROR' }, 400)
       }
     } else {
       // Normal mode: need all booking fields
       if (!trip_id || !cabin_id || !telegram_id || !telegram_handle || !full_name || !booking_type) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Missing required fields', error_code: 'VALIDATION_ERROR' }),
-          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+        return reply({ success: false, error: 'Missing required fields', error_code: 'VALIDATION_ERROR' }, 400)
       }
 
       // Validate booking type
-      const validBookingTypes: BookingType[] = ['full_single', 'full_double', 'half', 'join']
-      if (!validBookingTypes.includes(booking_type as BookingType)) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid booking type', error_code: 'INVALID_BOOKING_TYPE' }),
-          { status: 400, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+      if (!(booking_type in BOOKING_TYPE_LABELS)) {
+        return reply({ success: false, error: 'Invalid booking type', error_code: 'INVALID_BOOKING_TYPE' }, 400)
       }
     }
 
@@ -85,199 +79,74 @@ serve(async (req) => {
     // ADMIN OVERRIDE MODE
     // ====================
     if (admin_override) {
-      // Admin mode: skip normal booking logic, just update cabin directly
-
-      // Get cabin details
       const { data: cabin, error: cabinError } = await supabase
         .from('cabins')
-        .select('id, cabin_number, deck, bed_type, price, status, guests, updated_at')
+        .select('id, cabin_number, deck, bed_type, price, status, guests, max_guests, updated_at')
         .eq('id', cabin_id)
         .single<CabinData>()
 
       if (cabinError || !cabin) {
         console.error('Error fetching cabin:', cabinError)
-        return new Response(
-          JSON.stringify({ success: false, error: 'Cabin not found', error_code: 'CABIN_NOT_FOUND' }),
-          { status: 404, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+        return reply({ success: false, error: 'Cabin not found', error_code: 'CABIN_NOT_FOUND' }, 404)
       }
 
-      // Find existing active booking for this cabin
-      console.log(`🔍 Looking for existing booking for cabin_id: ${cabin_id}`)
-      const { data: existingBooking, error: findBookingError } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('cabin_id', cabin_id)
-        .eq('booking_status', 'active')
-        .maybeSingle()
-
-      if (findBookingError) {
-        console.error('Error finding existing booking:', findBookingError)
-      } else {
-        console.log(`📋 Existing booking: ${existingBooking ? existingBooking.id : 'none'}`)
-      }
+      // Optimistic lock: the admin edited the cabin as of expected_updated_at (sent as-is, full precision);
+      // any write since then (guests, status, anything) makes the update match no rows.
+      const conflict = () => reply({
+        success: false,
+        error: 'Cabin was changed by someone else',
+        error_code: 'CONFLICT',
+        current_guests: cabin.guests ?? '',
+        current_status: cabin.status,
+      }, 409)
+      const lockedAt = expected_updated_at ?? cabin.updated_at
+      if (lockedAt !== cabin.updated_at) return conflict()
 
       const finalStatus = cabin_status || 'Booked'
-      const needsBooking = finalStatus !== 'Available' && finalStatus !== 'STAFF'
-      console.log(`📊 Status: ${finalStatus}, needsBooking: ${needsBooking}`)
-
-      let booking = null
-
-      if (needsBooking && existingBooking) {
-        // UPDATE existing booking
-        const { data: updatedBooking, error: updateBookingError } = await supabase
-          .from('bookings')
-          .update({
-            guests_info,
-            cabin_number: cabin.cabin_number,
-            cabin_deck: cabin.deck,
-            cabin_bed_type: cabin.bed_type,
-            cabin_price: cabin.price,
-            total_amount: cabin.price,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingBooking.id)
-          .select('id')
-          .single()
-
-        if (updateBookingError) {
-          console.error('Error updating booking:', updateBookingError)
-        } else {
-          booking = updatedBooking
-          console.log(`✅ Admin updated existing booking ${existingBooking.id} for cabin ${cabin.cabin_number}`)
-        }
-      } else if (needsBooking && !existingBooking) {
-        // CREATE new booking (cabin was empty before)
-        const { data: newBooking, error: insertBookingError } = await supabase
-          .from('bookings')
-          .insert({
-            trip_id,
-            cabin_id: cabin.id,
-            user_id: null,
-            guest_telegram_handle: 'admin',
-            guest_full_name: 'Admin Override',
-            cabin_number: cabin.cabin_number,
-            cabin_deck: cabin.deck,
-            cabin_bed_type: cabin.bed_type,
-            cabin_price: cabin.price,
-            booking_type: 'full_double',
-            payer_info: { type: 'admin', details: 'Manual admin booking' },
-            total_amount: cabin.price,
-            paid_amount: 0,
-            payment_status: 'pending',
-            payment_deadline: null,
-            booking_status: 'active',
-            guests_info,
-            booking_source: 'admin',
-            admin_booked_by: authContext.telegramId,
-          })
-          .select('id')
-          .single()
-
-        if (insertBookingError) {
-          console.error('Error creating booking:', insertBookingError)
-        } else {
-          booking = newBooking
-          console.log(`✅ Admin created new booking ${newBooking.id} for cabin ${cabin.cabin_number}`)
-        }
-      } else if (!needsBooking && existingBooking) {
-        // CANCEL existing booking (clearing cabin to Available/STAFF)
-        const { error: cancelBookingError } = await supabase
-          .from('bookings')
-          .update({
-            booking_status: 'cancelled',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingBooking.id)
-
-        if (cancelBookingError) {
-          console.error('Error cancelling booking:', cancelBookingError)
-        } else {
-          console.log(`✅ Admin cancelled booking ${existingBooking.id} for cabin ${cabin.cabin_number} (set to ${finalStatus})`)
-        }
-      }
-
-      // Update cabin AFTER handling booking logic
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from('cabins')
         .update({
           status: finalStatus,
           guests: guests_info || null,
-          updated_at: new Date().toISOString(),
+          changed_by: `admin:${authContext.telegramId}`,
         })
         .eq('id', cabin_id)
+        .eq('updated_at', lockedAt)
+        .select('id')
 
       if (updateError) {
         console.error('Error updating cabin:', updateError)
-        return new Response(
-          JSON.stringify({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }),
-          { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+        return reply({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }, 500)
       }
+      if (!updated || updated.length === 0) return conflict()
 
       console.log(`✅ Admin override: ${authContext.telegramUsername || authContext.telegramId} set cabin ${cabin.cabin_number} to ${finalStatus}`)
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          booking_id: booking?.id || null,
-          total_amount: cabin.price,
-          message: 'Cabin updated by admin',
-        }),
-        { status: 201, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: true, total_amount: cabin.price, message: 'Cabin updated by admin' }, 201)
     }
 
     // ====================
     // NORMAL BOOKING MODE
     // ====================
 
-    // Step 1: Get or create user by telegram_id
-    let { data: users, error: userError } = await supabase
+    // Validated above for normal mode
+    const handle = telegram_handle!
+    const name = full_name!
+
+    // Step 1: Make sure we know this Telegram user (lets the bot write to them later); existing users are left as is
+    const name_parts = name.split(' ')
+    const { error: userError } = await supabase
       .from('users')
-      .select('id')
-      .eq('telegram_id', telegram_id)
-      .limit(1)
+      .upsert({
+        telegram_id,
+        username: handle.startsWith('@') ? handle.slice(1) : handle,
+        first_name: name_parts[0] || '',
+        last_name: name_parts.slice(1).join(' ') || '',
+      }, { onConflict: 'telegram_id', ignoreDuplicates: true })
 
     if (userError) {
-      console.error('Error fetching user:', userError)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Database error', error_code: 'DB_ERROR' }),
-        { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
-    }
-
-    let user_id: string
-
-    if (!users || users.length === 0) {
-      // User doesn't exist, create new user
-      const clean_handle = telegram_handle.startsWith('@') ? telegram_handle.slice(1) : telegram_handle
-      const name_parts = full_name.split(' ')
-      const first_name = name_parts[0] || ''
-      const last_name = name_parts.slice(1).join(' ') || ''
-
-      const { data: newUser, error: createUserError } = await supabase
-        .from('users')
-        .insert({
-          telegram_id,
-          username: clean_handle,
-          first_name,
-          last_name,
-        })
-        .select('id')
-        .single()
-
-      if (createUserError || !newUser) {
-        console.error('Error creating user:', createUserError)
-        return new Response(
-          JSON.stringify({ success: false, error: 'Failed to create user', error_code: 'USER_CREATE_ERROR' }),
-          { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
-      }
-
-      user_id = newUser.id
-    } else {
-      user_id = users[0].id
+      console.error('Error saving user:', userError)
+      return reply({ success: false, error: 'Failed to save user', error_code: 'USER_CREATE_ERROR' }, 500)
     }
 
     // Step 2: Get cabin details with current status
@@ -289,10 +158,7 @@ serve(async (req) => {
 
     if (cabinError || !cabin) {
       console.error('Error fetching cabin:', cabinError)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Cabin not found', error_code: 'CABIN_NOT_FOUND' }),
-        { status: 404, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: false, error: 'Cabin not found', error_code: 'CABIN_NOT_FOUND' }, 404)
     }
 
     // Step 3: Validate cabin availability based on booking type
@@ -301,159 +167,102 @@ serve(async (req) => {
     if (booking_type === 'join') {
       // For join, cabin must be "Half Available"
       if (currentStatus !== 'Half Available') {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: 'Cabin is not available for joining',
-            error_code: 'CABIN_NOT_HALF_AVAILABLE',
-            current_status: currentStatus
-          }),
-          { status: 409, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
+        return reply({
+          success: false,
+          error: 'Cabin is not available for joining',
+          error_code: 'CABIN_NOT_HALF_AVAILABLE',
+          current_status: currentStatus,
+        }, 409)
       }
-    } else {
+    } else if (currentStatus !== 'Available') {
       // For other types, cabin must be "Available"
-      if (currentStatus !== 'Available') {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: 'Cabin is not available',
-            error_code: 'CABIN_NOT_AVAILABLE',
-            current_status: currentStatus
-          }),
-          { status: 409, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-        )
-      }
+      return reply({
+        success: false,
+        error: 'Cabin is not available',
+        error_code: 'CABIN_NOT_AVAILABLE',
+        current_status: currentStatus,
+      }, 409)
     }
 
     // Step 4: Calculate booking details
-    const cabin_price = cabin.price
+    const guest = `${handle} ${name}`
     let total_amount: number
     let new_cabin_status: CabinStatus
     let guests_to_set: string
 
-    if (booking_type === 'full_single') {
-      total_amount = cabin_price
-      new_cabin_status = 'Booked'
-      guests_to_set = guests_info || `${telegram_handle} ${full_name}`
-    } else if (booking_type === 'full_double') {
-      total_amount = cabin_price
-      new_cabin_status = 'Booked'
-      guests_to_set = guests_info || `${telegram_handle} ${full_name}`
-    } else if (booking_type === 'half') {
-      total_amount = cabin_price / 2
+    if (booking_type === 'half') {
+      total_amount = cabin.price / 2
       new_cabin_status = 'Half Available'
-      guests_to_set = guests_info || `${telegram_handle} ${full_name}`
-    } else { // join
-      total_amount = cabin_price / 2
+      guests_to_set = guests_info || guest
+    } else if (booking_type === 'join') {
+      total_amount = cabin.price / 2
       new_cabin_status = 'Booked'
       // For join, append new guest to existing guests
       const current_guests = cabin.guests || ''
-      guests_to_set = current_guests.trim()
-        ? `${current_guests}, ${telegram_handle} ${full_name}`
-        : `${telegram_handle} ${full_name}`
+      guests_to_set = current_guests.trim() ? `${current_guests}, ${guest}` : guest
+    } else { // full_single, full_double
+      total_amount = cabin.price
+      new_cabin_status = 'Booked'
+      guests_to_set = guests_info || guest
     }
 
-    // Step 5: Create booking record
-    const payment_deadline = new Date()
-    payment_deadline.setDate(payment_deadline.getDate() + 14) // 14 days to pay
-
-    const { data: booking, error: bookingError } = await supabase
-      .from('bookings')
-      .insert({
-        trip_id,
-        cabin_id: cabin.id,
-        user_id,
-        guest_telegram_handle: telegram_handle,
-        guest_full_name: full_name,
-        cabin_number: cabin.cabin_number,
-        cabin_deck: cabin.deck,
-        cabin_bed_type: cabin.bed_type,
-        cabin_price,
-        booking_type,
-        payer_info: { type: 'self', details: payer_details || '' },
-        total_amount,
-        paid_amount: 0,
-        payment_status: 'pending',
-        payment_deadline: payment_deadline.toISOString(),
-        booking_status: 'active',
-        guests_info: guests_info || null,
-        booking_source: 'miniapp',
-      })
-      .select('id')
-      .single()
-
-    if (bookingError || !booking) {
-      console.error('Error creating booking:', bookingError)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Failed to create booking', error_code: 'BOOKING_CREATE_ERROR' }),
-        { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const booking_id = booking.id
-
-    // Step 6: Update cabin with Optimistic Locking
-    // This is the critical part - we only update if the status hasn't changed
+    // Step 5: Update cabin with Optimistic Locking
+    // Only update if the status hasn't changed since we read it
     const { data: updatedCabin, error: updateError } = await supabase
       .from('cabins')
       .update({
         status: new_cabin_status,
         guests: guests_to_set,
-        updated_at: new Date().toISOString(),
+        changed_by: `miniapp:${telegram_id}`,
       })
       .eq('id', cabin_id)
-      .eq('status', currentStatus) // Optimistic Lock: only update if status is still the same
+      .eq('status', currentStatus)
+      .eq('updated_at', cabin.updated_at) // also catches guest edits that kept the status (join builds on cabin.guests)
       .select('id')
 
     if (updateError) {
       console.error('Error updating cabin:', updateError)
-      // Rollback: delete the booking
-      await supabase.from('bookings').delete().eq('id', booking_id)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }),
-        { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({ success: false, error: 'Failed to update cabin', error_code: 'CABIN_UPDATE_ERROR' }, 500)
     }
 
-    // Check if cabin was actually updated (Optimistic Lock check)
     if (!updatedCabin || updatedCabin.length === 0) {
-      // Status changed between our read and update - race condition detected!
+      // Cabin changed between our read and update - race condition detected!
       console.warn(`Race condition detected for cabin ${cabin_id}. Status changed from ${currentStatus}`)
-
-      // Rollback: delete the booking
-      await supabase.from('bookings').delete().eq('id', booking_id)
-
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Cabin was just booked by someone else',
-          error_code: 'RACE_CONDITION',
-          previous_status: currentStatus
-        }),
-        { status: 409, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-      )
+      return reply({
+        success: false,
+        error: 'Cabin was just booked by someone else',
+        error_code: 'RACE_CONDITION',
+        previous_status: currentStatus,
+      }, 409)
     }
 
-    // Success!
-    console.log(`✅ Booking created: ${booking_id} - ${telegram_handle} in cabin ${cabin.cabin_number}`)
+    // Step 6: Leave the details in the notebook (who booked, how, payer). The cabin is already booked,
+    // so a failure here is logged but doesn't fail the booking.
+    const noteLines = [
+      `Бронь через мини-апп: ${guest}, каюта ${cabin.cabin_number} (${cabin.deck}), ${BOOKING_TYPE_LABELS[booking_type as BookingType]}, ${total_amount}.`,
+      guests_info && guests_info !== guests_to_set ? `Гости: ${guests_info}` : null,
+      payer_details ? `Плательщик: ${payer_details}` : null,
+    ].filter(Boolean)
 
-    const response: CreateBookingResponse = {
-      success: true,
-      booking_id,
-      total_amount,
-    }
+    const { data: note, error: noteError } = await supabase
+      .from('notes')
+      .insert({
+        trip_id,
+        text: noteLines.join('\n'),
+        created_by: `miniapp:${telegram_id}`,
+        source: 'miniapp',
+      })
+      .select('id')
+      .single()
 
-    return new Response(
-      JSON.stringify(response),
-      { status: 201, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-    )
+    if (noteError) console.error('Error saving booking note:', noteError, '\nNote text:', noteLines.join('\n'))
+
+    console.log(`✅ Booking: ${handle} in cabin ${cabin.cabin_number}`)
+
+    return reply({ success: true, booking_id: note?.id, total_amount }, 201)
 
   } catch (error) {
     console.error('Unexpected error:', error)
-    return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error', error_code: 'INTERNAL_ERROR' }),
-      { status: 500, headers: { ...corsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' } }
-    )
+    return reply({ success: false, error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500)
   }
 })

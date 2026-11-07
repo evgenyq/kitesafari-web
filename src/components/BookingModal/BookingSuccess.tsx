@@ -34,12 +34,14 @@ export function BookingSuccess({
         </p>
 
         <div className={styles.details}>
-          <div className={styles.detailItem}>
-            <span className={styles.detailLabel}>Номер бронирования</span>
-            <span className={styles.detailValue}>
-              {bookingId.slice(0, 8).toUpperCase()}
-            </span>
-          </div>
+          {bookingId && (
+            <div className={styles.detailItem}>
+              <span className={styles.detailLabel}>Номер бронирования</span>
+              <span className={styles.detailValue}>
+                {bookingId.slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+          )}
 
           <div className={styles.detailItem}>
             <span className={styles.detailLabel}>Тип бронирования</span>

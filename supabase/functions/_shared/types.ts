@@ -2,11 +2,7 @@
 
 export type BookingType = 'full_single' | 'full_double' | 'half' | 'join'
 
-export type CabinStatus = 'Available' | 'Half Available' | 'Booked' | 'Paid' | 'Unavailable'
-
-export type PaymentStatus = 'pending' | 'partial' | 'paid' | 'overpaid' | 'refund_due'
-
-export type BookingStatus = 'active' | 'cancelled' | 'completed' | 'moved'
+export type CabinStatus = 'Available' | 'Half Available' | 'Booked' | 'Paid' | 'Unavailable' | 'STAFF'
 
 export interface CreateBookingRequest {
   trip_id: string
@@ -19,11 +15,12 @@ export interface CreateBookingRequest {
   payer_details?: string // Optional payer information
   admin_override?: boolean // Admin mode: bypass validation, use free-text guests
   cabin_status?: CabinStatus // Admin mode: set specific cabin status
+  expected_updated_at?: string // Admin mode: cabins.updated_at the admin saw, as-is; refuse (CONFLICT) if the cabin changed since
 }
 
 export interface CreateBookingResponse {
   success: boolean
-  booking_id?: string
+  booking_id?: string // id of the notes row describing the booking (shown as booking number)
   total_amount?: number
   error?: string
   error_code?: string // For specific error handling
@@ -38,29 +35,5 @@ export interface CabinData {
   status: CabinStatus
   max_guests: number
   guests?: string
-  updated_at: string
-}
-
-export interface BookingData {
-  id: string
-  trip_id: string
-  cabin_id: string
-  user_id: string
-  guest_telegram_handle: string
-  guest_full_name: string
-  cabin_number: number
-  cabin_deck: string
-  cabin_bed_type: string
-  cabin_price: number
-  booking_type: BookingType
-  payer_info: Record<string, any>
-  total_amount: number
-  paid_amount: number
-  payment_status: PaymentStatus
-  payment_deadline: string
-  booking_status: BookingStatus
-  guests_info?: string
-  booking_source: string
-  created_at: string
   updated_at: string
 }

@@ -111,7 +111,7 @@ export function ConfirmBooking({
       }
 
       // Success!
-      onSuccess(data.booking_id, data.total_amount)
+      onSuccess(data.booking_id ?? '', data.total_amount)
 
       // Show Telegram notification if available
       if (webApp?.showPopup) {

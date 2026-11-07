@@ -64,6 +64,7 @@ export function AdminBookingModal({
         guests_info: finalGuestsInfo,
         cabin_status: status,
         admin_override: true,
+        expected_updated_at: cabin.updated_at,
       }
 
       console.log('📤 Sending request:', requestBody)
@@ -83,6 +84,13 @@ export function AdminBookingModal({
       )
 
       console.log('📥 Response status:', response.status)
+
+      if (response.status === 409) {
+        const conflict = await response.json().catch(() => ({}))
+        throw new Error(
+          `Каюту только что изменил кто-то другой. Сейчас там: ${conflict.current_guests || '—'}. Обновите страницу и повторите.`
+        )
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
