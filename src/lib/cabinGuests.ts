@@ -29,3 +29,27 @@ export async function fetchCabinGuests(tripId: string): Promise<Record<string, s
     return {}
   }
 }
+
+/** Link to the Google Sheet live view; null for non-admins, outside Telegram or on error. */
+export async function fetchSheetUrl(tripId: string): Promise<string | null> {
+  const initData = window.Telegram?.WebApp?.initData
+  if (!initData) return null
+
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cabin-guests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'X-Telegram-Init-Data': initData,
+      },
+      body: JSON.stringify({ trip_id: tripId }),
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    return data.sheet_url ?? null
+  } catch (err) {
+    console.error('Error fetching sheet url:', err)
+    return null
+  }
+}

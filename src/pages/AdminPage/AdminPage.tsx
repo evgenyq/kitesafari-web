@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link, Navigate } from 'react-router-dom'
 import { Layout } from '../../components/Layout/Layout'
 import { AdminBookingModal } from './AdminBookingModal'
 import { useTrip } from '../../hooks/useTrip'
 import { useAllCabins } from '../../hooks/useAllCabins'
 import { useAdmin } from '../../hooks/useAdmin'
+import { fetchSheetUrl } from '../../lib/cabinGuests'
 import type { Cabin } from '../../types'
 import styles from './AdminPage.module.css'
 
@@ -16,8 +17,11 @@ export function AdminPage() {
 
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (trip?.id) fetchSheetUrl(trip.id).then(setSheetUrl)
+  }, [trip?.id])
 
   const handleBookCabin = (cabin: Cabin) => {
     setSelectedCabin(cabin)
@@ -27,51 +31,6 @@ export function AdminPage() {
   const handleCloseModal = () => {
     setSelectedCabin(null)
     setModalOpen(false)
-  }
-
-  const handleExportToSheets = async () => {
-    if (!trip?.id) return
-
-    setExporting(true)
-    setExportStatus(null)
-
-    try {
-      const initData = (window as any).Telegram?.WebApp?.initData
-      if (!initData) {
-        throw new Error('Telegram WebApp not initialized')
-      }
-
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/export-to-sheets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'X-Telegram-Init-Data': initData,
-        },
-        body: JSON.stringify({
-          trip_id: trip.id,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setExportStatus(`✅ ${data.message}`)
-        // Open sheet in new tab
-        if (data.sheet_url) {
-          window.open(data.sheet_url, '_blank')
-        }
-      } else {
-        setExportStatus(`❌ Ошибка: ${data.error}`)
-      }
-    } catch (error) {
-      console.error('Export error:', error)
-      setExportStatus(`❌ Ошибка экспорта: ${error}`)
-    } finally {
-      setExporting(false)
-    }
   }
 
   // Check admin access
@@ -115,18 +74,10 @@ export function AdminPage() {
         <h1>🛠️ Админ-панель: {trip.name}</h1>
         <p className={styles.subtitle}>Управление бронированиями</p>
 
-        <button
-          className={styles.exportButton}
-          onClick={handleExportToSheets}
-          disabled={exporting}
-        >
-          {exporting ? '📊 Экспортируем...' : '📊 Экспорт в Google Sheets'}
-        </button>
-
-        {exportStatus && (
-          <div className={styles.exportStatus}>
-            {exportStatus}
-          </div>
+        {sheetUrl && (
+          <a className={styles.exportButton} href={sheetUrl} target="_blank" rel="noreferrer">
+            📊 Открыть Google-таблицу
+          </a>
         )}
       </div>
 

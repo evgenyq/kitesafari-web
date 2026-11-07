@@ -43,5 +43,7 @@ serve(async (req) => {
 
   const guests: Record<string, string> = {}
   for (const row of data ?? []) guests[row.id] = row.guests
-  return reply({ guests, is_admin: authContext.isAdmin })
+  const sheetId = Deno.env.get('GOOGLE_SHEET_ID')
+  const sheet_url = authContext.isAdmin && sheetId ? `https://docs.google.com/spreadsheets/d/${sheetId}` : null
+  return reply({ guests, is_admin: authContext.isAdmin, sheet_url })
 })
