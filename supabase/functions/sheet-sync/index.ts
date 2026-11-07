@@ -111,7 +111,8 @@ async function syncTrip(trip: Trip, tabs: Map<string, { sheetId: number; rules: 
 
   const body = [HEADERS, ...rows]
   const desired = [pad([`Обновляется автоматически из базы. Не редактируйте — правка из таблицы появится позже. Обновлено ${nowLabel()}`]), ...body.map(pad)]
-  const unchanged = sameShape(current, desired) && current.slice(1).every((r, i) => r.join('\u0001') === desired[i + 1].join('\u0001'))
+  const paused = current[0]?.[0]?.startsWith('⏸') // leftover pause banner must be replaced even if data matches
+  const unchanged = !paused && sameShape(current, desired) && current.slice(1).every((r, i) => r.join('\u0001') === desired[i + 1].join('\u0001'))
   if (unchanged) return `${title}: up to date`
 
   const rebuild = !sameShape(current, desired)
