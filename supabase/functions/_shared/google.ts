@@ -39,6 +39,7 @@ async function getAccessToken(): Promise<string> {
 
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
+    signal: AbortSignal.timeout(20_000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -57,6 +58,7 @@ export async function sheetsApi<T = any>(spreadsheetId: string, path: string, in
   const token = await getAccessToken()
   const response = await fetch(`${SHEETS_URL}/${spreadsheetId}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(20_000), // a hung call must not outlive the sheet-sync lock
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   })
   if (!response.ok) throw new Error(`Sheets API ${response.status} on ${path}: ${await response.text()}`)

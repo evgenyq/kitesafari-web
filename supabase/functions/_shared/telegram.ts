@@ -9,6 +9,7 @@ export async function tg<T = any>(method: string, body: Record<string, unknown>)
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
   })
   const data = await response.json()
   if (!data.ok) throw new Error(`Telegram ${method}: ${data.description}`)
