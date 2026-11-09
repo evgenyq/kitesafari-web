@@ -5,6 +5,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { createProposal, STATUSES, STATUS_RU, type ProposalInput } from './proposals.ts'
 import { tokenCost } from './costs.ts'
+import { createSetupProposal, SETUP_TOOL, type SetupInput } from './setup.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-6.1-terra'
@@ -111,6 +112,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  SETUP_TOOL,
 ]
 
 export interface Ctx { db: SupabaseClient; chatId: number; adminId: number; adminName: string; cardSent?: boolean; cardPlain?: string }
@@ -163,17 +165,26 @@ async function runTool(ctx: Ctx, name: string, args: any): Promise<unknown> {
     }
     return result.text
   }
+  if (name === 'propose_setup') {
+    const result = await createSetupProposal(ctx.db, ctx.chatId, ctx.adminId, args as SetupInput)
+    if (result.cardSent) {
+      ctx.cardSent = true
+      ctx.cardPlain = result.cardPlain
+    }
+    return result.text
+  }
   return { error: `Неизвестный инструмент ${name}` }
 }
 
 /** Snapshot the model gets every turn: trips, cabins of current/future trips, open notes, pending card. */
 async function buildContext(db: SupabaseClient, chatId: number): Promise<string> {
   const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)
-  const [trips, cabins, notes, pending] = await Promise.all([
-    db.from('trips').select('id, name, start_date, end_date, status').order('start_date'),
+  const [trips, cabins, notes, pending, yachts] = await Promise.all([
+    db.from('trips').select('id, name, start_date, end_date, status, access_code').order('start_date'),
     db.from('cabins').select('id, trip_id, cabin_number, deck, bed_type, price, status, guests, max_guests, yachts(name), trips!inner(end_date)').gte('trips.end_date', since),
     db.from('notes').select('id, trip_id, text, remind_at, created_at').eq('status', 'open').order('created_at', { ascending: false }).limit(60),
     db.from('bot_proposals').select('summary, created_at').eq('chat_id', chatId).eq('status', 'pending').limit(1),
+    db.from('yachts').select('id, name, photos_urls, deck_plan_urls').order('name'),
   ])
   const tripName = new Map((trips.data ?? []).map((t: any) => [t.id, t.name]))
   const byTrip = new Map<string, string[]>()
@@ -183,7 +194,10 @@ async function buildContext(db: SupabaseClient, chatId: number): Promise<string>
   }
   const parts = [
     '## Туры',
-    ...(trips.data ?? []).map((t: any) => `[${t.id}] ${t.name}: ${t.start_date} — ${t.end_date}, ${t.status}`),
+    ...(trips.data ?? []).map((t: any) => `[${t.id}] ${t.name}: ${t.start_date} — ${t.end_date}, ${t.status}, ссылка ${t.access_code ?? '—'}`),
+    '',
+    '## Лодки',
+    ...(yachts.data ?? []).map((y: any) => `[${y.id}] ${y.name}: ${(y.photos_urls ?? []).length} фото, ${(y.deck_plan_urls ?? []).length ? 'есть план палуб' : 'плана палуб нет'}`),
     '',
     '## Каюты текущих и будущих туров (формат: [id] яхта #номер · палуба · кровать · вместимость · цена · статус | кто живёт)',
     ...[...byTrip.entries()].flatMap(([tripId, lines]) => [`### ${tripName.get(tripId) ?? tripId}`, ...lines]),
@@ -213,6 +227,8 @@ function instructions(ctx: Ctx, snapshot: string): string {
 - После propose ничего не пиши: карточка говорит сама за себя.
 - Кому отдать освободившееся место, решает только организатор: показывай кандидатов из книжки и порядок поступления, не выбирай сам.
 - Записи книжки пиши самодостаточно: кто (ник), с кем, чего хочет, какой тур, откуда пришло, дата.
+- Заведение тура, лодок, кают, цен, номеров, фото — инструмент propose_setup (одной карточкой). Цены у Олега обычно «за место» — в базу пиши за каюту (× мест); «за каюту» — как есть. Если не хватает дат, состава кают или цен — спроси одним списком, не выдумывай. Лодку, которая уже есть в разделе «Лодки», не создавай заново — используй её id.
+- Сообщение «[Фото <url>] подпись» — присланное фото, уже загружено. Если по подписи или разговору не ясно, к какой лодке оно и фото это или план палуб — спроси. Пачку фото оформляй одной карточкой.
 
 ${snapshot}`
 }

@@ -1,6 +1,7 @@
 // Edge Function: telegram-webhook — the @kitesafaribot entry point.
 //   /start [access_code]   → anyone: button that opens the Mini App
 //   /new (admins)          → start a fresh conversation (also automatic after 12 h of silence)
+//   admin photos / image files → stored in yacht-photos/inbox, seen by the agent as «[Фото <url>] подпись»
 //   admin text / voice / forwards → agent (agent.ts): reads the DB, proposes changes as cards; voice is
 //                          transcribed first (voice.ts) and echoed back as «🎤 …»
 //   card buttons           → apply / cancel a proposal (proposals.ts)
@@ -10,7 +11,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { sendText, tg } from '../_shared/telegram.ts'
+import { downloadFile, sendText, tg } from '../_shared/telegram.ts'
 import { NEW_CONVERSATION, runAgent } from './agent.ts'
 import { resolveProposal } from './proposals.ts'
 import { MAX_VOICE_SECONDS, transcribe } from './voice.ts'
@@ -20,6 +21,8 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 const MINI_APP_URL = Deno.env.get('MINI_APP_URL') || 'https://evgenyq.github.io/kitesafari-web/'
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')
 const MAX_ROUNDS = 10 // safety cap on the worker loop
+const PHOTO_UPLOADING = '[Фото — загружаю…]'
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024 // Bot API download limit
 
 interface TgUser { id: number; first_name: string; last_name?: string; username?: string }
 interface TgMessage {
@@ -31,6 +34,8 @@ interface TgMessage {
   caption?: string
   voice?: { file_id: string; duration: number }
   audio?: { file_id: string; duration: number }
+  photo?: { file_id: string; file_unique_id: string; width: number; height: number }[]
+  document?: { file_id: string; file_unique_id: string; mime_type?: string; file_size?: number }
   entities?: unknown[]
   forward_origin?: { type: string; sender_user?: TgUser; sender_user_name?: string; chat?: { title?: string }; date: number }
 }
@@ -102,6 +107,30 @@ Deno.serve(async (req) => {
       EdgeRuntime.waitUntil(handleVoice(db, message, voice, row[0].id))
       return ok()
     }
+    const image = message.photo?.length
+      ? { file_id: message.photo[message.photo.length - 1].file_id, unique: message.photo[message.photo.length - 1].file_unique_id, mime: 'image/jpeg', size: 0 }
+      : ['image/jpeg', 'image/png', 'image/webp'].includes(message.document?.mime_type ?? '') // not HEIC (browsers can't show it), not SVG (scripts)
+        ? { file_id: message.document!.file_id, unique: message.document!.file_unique_id, mime: message.document!.mime_type!, size: message.document!.file_size ?? 0 }
+        : null
+    if (image) {
+      if (image.size > MAX_PHOTO_BYTES) {
+        EdgeRuntime.waitUntil(sendText(message.chat.id, 'Файл больше 20 МБ — Telegram не отдаёт такие ботам. Пришлите сжатым фото.').catch(() => {}))
+        return ok()
+      }
+      const { data: row, error } = await db
+        .from('bot_messages')
+        .upsert({ chat_id: message.chat.id, tg_message_id: message.message_id, role: 'user', text: PHOTO_UPLOADING, processed: true },
+          { onConflict: 'chat_id,tg_message_id', ignoreDuplicates: true })
+        .select('id')
+      if (error) console.error('bot_messages photo insert:', error)
+      if (!row?.length) return ok()
+      EdgeRuntime.waitUntil(handlePhoto(db, message, image, text, row[0].id))
+      return ok()
+    }
+    if (message.document?.mime_type?.startsWith('image/')) {
+      EdgeRuntime.waitUntil(sendText(message.chat.id, 'Такой формат картинки не подойдёт (HEIC/SVG). Пришлите как обычное фото или JPG/PNG.').catch(() => {}))
+      return ok()
+    }
     if (!text.trim()) return ok()
 
     // Telegram re-delivers an update if we were slow to answer; the unique (chat_id, tg_message_id) drops repeats
@@ -140,6 +169,40 @@ async function handleVoice(db: SupabaseClient, message: TgMessage, voice: { file
     console.error('voice:', err)
     await db.from('bot_messages').update({ text: '[Голосовое — не удалось распознать]' }).eq('id', rowId)
     await sendText(chatId, 'Не смог распознать голосовое. Попробуйте ещё раз или напишите текстом.').catch(() => {})
+  }
+}
+
+/** Photo → Storage (yacht-photos/inbox/<telegram unique id>), then handled like a text message «[Фото url] caption». */
+async function handlePhoto(db: SupabaseClient, message: TgMessage, image: { file_id: string; unique: string; mime: string }, caption: string, rowId: number) {
+  const chatId = message.chat.id
+  try {
+    const blob = await downloadFile(image.file_id)
+    const ext = image.mime === 'image/png' ? 'png' : image.mime === 'image/webp' ? 'webp' : 'jpg'
+    const path = `inbox/${image.unique}.${ext}`
+    const { error } = await db.storage.from('yacht-photos').upload(path, blob, { contentType: image.mime, upsert: true })
+    if (error) throw error
+    const url = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/yacht-photos/${path}`
+    await db.from('bot_messages').update({ text: describeIncoming(message, `[Фото ${url}]${caption ? ` ${caption}` : ''}`), processed: false }).eq('id', rowId)
+    await work(db, chatId, message.from!)
+  } catch (err) {
+    console.error('photo:', err)
+    await db.from('bot_messages').update({ text: '[Фото — не удалось загрузить]' }).eq('id', rowId)
+    await sendText(chatId, 'Не смог сохранить фото. Попробуйте прислать ещё раз.').catch(() => {})
+  }
+}
+
+/** An album arrives as separate messages: wait until every photo of this chat is uploaded and none came for 2 s. */
+async function settlePhotos(db: SupabaseClient, chatId: number) {
+  const started = Date.now()
+  while (Date.now() - started < 30_000) {
+    const since = new Date(Date.now() - 60_000).toISOString()
+    const { data: recent } = await db.from('bot_messages').select('text, created_at').eq('chat_id', chatId).eq('role', 'user')
+      .gte('created_at', since).order('id', { ascending: false })
+    const photos = (recent ?? []).filter((m) => m.text === PHOTO_UPLOADING || m.text.includes('[Фото http'))
+    const uploading = photos.some((m) => m.text === PHOTO_UPLOADING)
+    const newest = photos[0] ? Date.parse(photos[0].created_at) : 0
+    if (!uploading && Date.now() - newest > 2_000) return
+    await new Promise((r) => setTimeout(r, 1_000))
   }
 }
 
@@ -186,7 +249,10 @@ async function work(db: SupabaseClient, chatId: number, from: TgUser) {
       if (error) throw error
 
       if (pending?.length) {
-        const ids = pending.map((m) => m.id)
+        await settlePhotos(db, chatId)
+        const { data: settled, error: settledError } = await db.from('bot_messages').select('id').eq('chat_id', chatId).eq('processed', false).order('id')
+        if (settledError) throw settledError
+        const ids = (settled ?? pending).map((m) => m.id)
         await tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {})
         const ctx: Parameters<typeof runAgent>[0] = { db, chatId, adminId: from.id, adminName }
         let reply: string

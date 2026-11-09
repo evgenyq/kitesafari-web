@@ -103,13 +103,19 @@ export async function createProposal(db: SupabaseClient, chatId: number, adminId
     }
   }
 
+  return sendCard(db, chatId, adminId, input.summary, actions, lines)
+}
+
+/** Store the proposal and send its card with Ок/Отмена. Shared by propose and propose_setup. */
+export async function sendCard(db: SupabaseClient, chatId: number, adminId: number, summary: string, actions: Record<string, unknown>[], lines: string[]): Promise<{ text: string; cardSent: boolean; cardPlain?: string }> {
+  const fail = (text: string) => ({ text: `Ошибка: ${text} Карточка не отправлена — исправь и предложи заново.`, cardSent: false })
   if (!actions.length) return { text: 'Нечего менять: всё уже так. Карточка не отправлена.', cardSent: false }
   const cardText = lines.join('\n').trim()
   if (cardText.length > CARD_LIMIT) return fail('карточка слишком длинная для Telegram — разбей на несколько по очереди.')
 
   const { data: proposal, error } = await db
     .from('bot_proposals')
-    .insert({ chat_id: chatId, created_by: adminId, summary: input.summary, actions })
+    .insert({ chat_id: chatId, created_by: adminId, summary, actions })
     .select('id')
     .single()
   if (error) throw error
@@ -183,6 +189,13 @@ export async function resolveProposal(db: SupabaseClient, proposalId: string, de
   }
 
   const { data: result, error: applyError } = await db.rpc('bot_apply_proposal', { p_id: proposalId, p_actor: `bot:${adminId}` })
+  if (applyError?.message?.startsWith('KS_CONFLICT:')) {
+    // The final-state check rolled the whole card back (migration 016)
+    const reason = applyError.message.slice('KS_CONFLICT:'.length).trim()
+    await db.from('bot_proposals').update({ status: 'conflict', resolved_at: new Date().toISOString() }).eq('id', proposalId).eq('status', 'pending')
+    await finish(`⚠️ Не применено: ${reason}.`)
+    return `Не применено «${proposal.summary}»: ${reason}.`
+  }
   if (applyError) throw applyError
 
   if (result.status === 'applied') {
@@ -191,18 +204,21 @@ export async function resolveProposal(db: SupabaseClient, proposalId: string, de
   }
   if (result.status === 'conflict') {
     const details = await describeConflicts(db, result.conflicts)
-    await finish(`⚠️ Не применено: пока карточка ждала, каюты изменились.\n${details}`)
-    return `Не применено «${proposal.summary}»: каюты изменились, пока карточка ждала. Сейчас там:\n${details}`
+    await finish(`⚠️ Не применено: пока карточка ждала, данные изменились.\n${details}`)
+    return `Не применено «${proposal.summary}»: данные изменились, пока карточка ждала. Сейчас:\n${details}`
   }
   await finish(`Уже обработано: ${statusRu[result.current] ?? result.current}`)
   return null
 }
 
 /** Plain text: goes into the edited card (no parse_mode) and into the history. */
-async function describeConflicts(db: SupabaseClient, conflicts: { cabin_id: string; current_guests: string | null; current_status: string | null }[]): Promise<string> {
-  const { data: cabins } = await db.from('cabins').select('id, cabin_number, yachts(name)').in('id', conflicts.map((c) => c.cabin_id))
+async function describeConflicts(db: SupabaseClient, conflicts: { cabin_id?: string | null; current_guests?: string | null; current_status?: string | null; reason?: string }[]): Promise<string> {
+  const ids = conflicts.map((c) => c.cabin_id).filter(Boolean) as string[]
+  const { data: cabins } = ids.length ? await db.from('cabins').select('id, cabin_number, yachts(name)').in('id', ids) : { data: [] }
   const names = new Map((cabins ?? []).map((c: any) => [c.id, `${c.yachts?.name ?? '?'} #${c.cabin_number}`]))
   return conflicts
-    .map((c) => `• ${names.get(c.cabin_id) ?? c.cabin_id}: ${c.current_guests?.trim() || 'пусто'} (${STATUS_RU[c.current_status ?? ''] ?? c.current_status})`)
+    .map((c) => c.reason // tour setup actions (migration 016)
+      ? `• ${c.cabin_id ? `${names.get(c.cabin_id) ?? 'каюта'}: ` : ''}${c.reason}`
+      : `• ${names.get(c.cabin_id!) ?? c.cabin_id}: ${c.current_guests?.trim() || 'пусто'} (${STATUS_RU[c.current_status ?? ''] ?? c.current_status})`)
     .join('\n')
 }
