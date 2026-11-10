@@ -3,8 +3,12 @@
 # Needs: Supabase CLI logged in (service key fetched at runtime, never printed).
 set -e
 cd "$(dirname "$0")/../.."
-export SUPABASE_URL=https://zmbiiywazaytltemzzvc.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=$(npx supabase projects api-keys --project-ref zmbiiywazaytltemzzvc -o env 2>/dev/null | grep -i '^SUPABASE_SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '"')
+if [ -n "$KS_ENV" ]; then # a local database instead of the live one: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+  set -a; . "$KS_ENV"; set +a
+else
+  export SUPABASE_URL=https://zmbiiywazaytltemzzvc.supabase.co
+  export SUPABASE_SERVICE_ROLE_KEY=$(npx supabase projects api-keys --project-ref zmbiiywazaytltemzzvc -o env 2>/dev/null | grep -i '^SUPABASE_SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '"')
+fi
 export TELEGRAM_BOT_TOKEN=test
 export TELEGRAM_API_BASE=http://localhost:8787
 git checkout -- supabase/.temp 2>/dev/null || true

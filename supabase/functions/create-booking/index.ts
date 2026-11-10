@@ -2,12 +2,14 @@
 // Purpose: Book a cabin from the mini-app (optimistic locking against races)
 // or let an admin set a cabin's guests/status directly (admin override).
 // cabins is the only source of truth; who/when lands in cabin_changes via a trigger
-// (we set cabins.changed_by), mini-app booking details go to notes.
+// (we set cabins.changed_by), mini-app booking details go to notes, and the organisers
+// who take notifications get a Telegram message about every booking a guest made himself.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getAuthContext } from '../_shared/auth.ts'
+import { tg } from '../_shared/telegram.ts'
 import type { CreateBookingRequest, CreateBookingResponse, CabinData, BookingType, CabinStatus } from '../_shared/types.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -258,6 +260,31 @@ serve(async (req) => {
     if (noteError) console.error('Error saving booking note:', noteError, '\nNote text:', noteLines.join('\n'))
 
     console.log(`✅ Booking: ${handle} in cabin ${cabin.cabin_number}`)
+
+    // Step 7: Tell the organisers right away — in the background: the guest's answer does not wait for
+    // Telegram, and nothing here can fail the booking.
+    const notify = async () => {
+      const [{ data: place }, { data: admins }] = await Promise.all([
+        supabase.from('cabins').select('yachts(name), trips(name)').eq('id', cabin_id).single(),
+        supabase.from('admin_users').select('telegram_id').eq('notify', true),
+      ])
+      const where = `${(place as any)?.trips?.name ?? ''}, ${(place as any)?.yachts?.name ?? ''} #${cabin.cabin_number}`
+      const text = `🆕 Бронь через мини-апп: ${guest}\n${where} (${cabin.deck}) — ${BOOKING_TYPE_LABELS[booking_type as BookingType]}, ${total_amount} €` +
+        `\nВ каюте теперь: ${guests_to_set}${payer_details ? `\nПлательщик: ${payer_details}` : ''}`
+      for (const admin of admins ?? []) {
+        if (Number(admin.telegram_id) === Number(telegram_id)) continue // an organiser booking for himself knows
+        try {
+          await tg('sendMessage', { chat_id: admin.telegram_id, text })
+          // "[от гостя] " marks text typed by an outsider: the bot's agent reads it as data (telegram-webhook/notify.ts)
+          await supabase.from('bot_messages').insert({ chat_id: admin.telegram_id, role: 'event', text: `[от гостя] Бронь через мини-апп: ${guest} — ${where}, ${BOOKING_TYPE_LABELS[booking_type as BookingType]}. В каюте теперь: ${guests_to_set}` })
+        } catch (e) {
+          console.error('booking notify:', e)
+        }
+      }
+    }
+    const background = notify().catch((err) => console.error('booking notify failed:', err))
+    const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime
+    if (runtime) runtime.waitUntil(background)
 
     return reply({ success: true, booking_id: note?.id, total_amount }, 201)
 

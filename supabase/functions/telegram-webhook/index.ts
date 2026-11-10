@@ -1,10 +1,13 @@
 // Edge Function: telegram-webhook — the @kitesafaribot entry point.
 //   /start [access_code]   → anyone: button that opens the Mini App
+//   /start hi[_<tag>]      → greeting of the guest agent; the tag (e.g. hi_guild) is kept as where they came from
+//   anyone else's text     → guest agent (guest.ts): answers from the FAQ and the brief, hands applications over
+//   x-sync-secret request  → due follow-ups (followups.ts), poked by the database only when something is due
 //   /new (admins)          → start a fresh conversation (also automatic after 12 h of silence)
 //   admin photos / image files → stored in yacht-photos/inbox, seen by the agent as «[Фото <url>] подпись»
 //   admin text / voice / forwards → agent (agent.ts): reads the DB, proposes changes as cards; voice is
 //                          transcribed first (voice.ts) and echoed back as «🎤 …»
-//   card buttons           → apply / cancel a proposal (proposals.ts)
+//   card buttons           → apply / cancel a proposal (proposals.ts); reminder buttons → move or close (followups.ts)
 // Telegram must send X-Telegram-Bot-Api-Secret-Token == TELEGRAM_WEBHOOK_SECRET (set via setWebhook);
 // without the secret configured the function refuses everything (fail closed).
 // Replies to Telegram immediately; the agent runs in the background (EdgeRuntime.waitUntil), one worker per chat.
@@ -13,6 +16,8 @@ import { timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 import { downloadFile, sendText, tg } from '../_shared/telegram.ts'
 import { NEW_CONVERSATION, runAgent } from './agent.ts'
+import { finishFollowUp, resolveFollowUp, sendDueFollowUps } from './followups.ts'
+import { GUEST_DAILY_MESSAGES, GUEST_DAILY_TURNS, runGuestAgent, SOURCE_EVENT } from './guest.ts'
 import { resolveProposal } from './proposals.ts'
 import { MAX_VOICE_SECONDS, transcribe } from './voice.ts'
 
@@ -20,6 +25,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 const MINI_APP_URL = Deno.env.get('MINI_APP_URL') || 'https://evgenyq.github.io/kitesafari-web/'
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')
+const SYNC_SECRET = Deno.env.get('SHEET_SYNC_SECRET') // shared with the database (Vault), as for sheet-sync
 const MAX_ROUNDS = 10 // safety cap on the worker loop
 const PHOTO_UPLOADING = '[Фото — загружаю…]'
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024 // Bot API download limit
@@ -47,10 +53,10 @@ interface TgUpdate {
 
 const ok = () => new Response('ok')
 
-function secretMatches(header: string | null): boolean {
-  if (!WEBHOOK_SECRET || !header) return false
+function secretMatches(header: string | null, secret = WEBHOOK_SECRET): boolean {
+  if (!secret || !header) return false
   const a = new TextEncoder().encode(header)
-  const b = new TextEncoder().encode(WEBHOOK_SECRET)
+  const b = new TextEncoder().encode(secret)
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
@@ -58,6 +64,15 @@ Deno.serve(async (req) => {
   if (!WEBHOOK_SECRET) {
     console.error('TELEGRAM_WEBHOOK_SECRET is not configured — refusing all updates')
     return new Response('Not configured', { status: 500 })
+  }
+  if (secretMatches(req.headers.get('x-sync-secret'), SYNC_SECRET)) {
+    const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    try {
+      return Response.json(await sendDueFollowUps(db))
+    } catch (err) {
+      console.error('follow-ups:', err)
+      return new Response('Follow-ups failed', { status: 500 })
+    }
   }
   if (!secretMatches(req.headers.get('x-telegram-bot-api-secret-token'))) return new Response('Forbidden', { status: 403 })
 
@@ -74,14 +89,45 @@ Deno.serve(async (req) => {
     if (!message?.from || message.chat.type !== 'private') return ok()
 
     const text = message.text ?? message.caption ?? ''
+    const admin = await isAdmin(db, message.from.id)
     if (!message.forward_origin && text.startsWith('/start')) {
-      const accessCode = text.split(' ')[1] ?? null
-      EdgeRuntime.waitUntil(sendMiniAppButton(message.chat.id, accessCode).catch((e) => console.error('start:', e)))
+      const payload = text.split(' ')[1] ?? null
+      const hi = payload?.match(/^hi(?:_([a-z0-9_-]{1,40}))?$/i)
+      if (hi && !admin) {
+        EdgeRuntime.waitUntil(greetGuest(db, message.chat.id, hi[1] ?? null).catch((e) => console.error('greet:', e)))
+        return ok()
+      }
+      EdgeRuntime.waitUntil(sendMiniAppButton(message.chat.id, hi ? null : payload).catch((e) => console.error('start:', e)))
       return ok()
     }
 
-    if (!(await isAdmin(db, message.from.id))) {
-      EdgeRuntime.waitUntil(sendText(message.chat.id, 'Я пока умею только открывать приложение с турами: нажмите /start').catch(() => {}))
+    if (!admin) {
+      if (!text.trim() || message.voice || message.audio || message.photo || message.document) {
+        EdgeRuntime.waitUntil(sendText(message.chat.id, 'Я пока понимаю только текст — напишите, пожалуйста, словами.').catch(() => {}))
+        return ok()
+      }
+      const since = new Date(Date.now() - 86400_000).toISOString()
+      const { count } = await db.from('bot_messages').select('id', { count: 'exact', head: true }).eq('chat_id', message.chat.id).eq('role', 'user').gte('created_at', since)
+      if ((count ?? 0) >= GUEST_DAILY_MESSAGES) {
+        if (count === GUEST_DAILY_MESSAGES) {
+          await db.from('bot_messages').insert({ chat_id: message.chat.id, tg_message_id: message.message_id, role: 'user', text: '[сверх дневного лимита — не обработано]', processed: true })
+          EdgeRuntime.waitUntil(sendText(message.chat.id, 'На сегодня я, пожалуй, всё. Если что-то срочное — напишите организатору напрямую: @evgenyq').catch(() => {}))
+        }
+        return ok()
+      }
+      const { count: turns } = await db.from('bot_runs').select('id', { count: 'exact', head: true }).eq('kind', 'guest').gte('started_at', since)
+      if ((turns ?? 0) >= GUEST_DAILY_TURNS) {
+        console.error('guest daily budget reached')
+        EdgeRuntime.waitUntil(sendText(message.chat.id, 'Сегодня я уже не отвечаю — напишите, пожалуйста, организатору напрямую: @evgenyq').catch(() => {}))
+        return ok()
+      }
+      const { data: inserted, error } = await db
+        .from('bot_messages')
+        .upsert({ chat_id: message.chat.id, tg_message_id: message.message_id, role: 'user', text: describeIncoming(message, text).slice(0, 2000), processed: false },
+          { onConflict: 'chat_id,tg_message_id', ignoreDuplicates: true })
+        .select('id')
+      if (error) console.error('bot_messages guest insert:', error)
+      if (inserted?.length) EdgeRuntime.waitUntil(work(db, message.chat.id, message.from, false))
       return ok()
     }
 
@@ -148,7 +194,7 @@ Deno.serve(async (req) => {
     }
     if (!inserted?.length) return ok() // duplicate delivery
 
-    EdgeRuntime.waitUntil(work(db, message.chat.id, message.from))
+    EdgeRuntime.waitUntil(work(db, message.chat.id, message.from, true))
     return ok()
   } catch (error) {
     console.error('Error processing update:', error)
@@ -164,7 +210,7 @@ async function handleVoice(db: SupabaseClient, message: TgMessage, voice: { file
     const transcript = await transcribe(db, chatId, rowId, voice.file_id, voice.duration)
     await db.from('bot_messages').update({ text: describeIncoming(message, `[Голосовое] ${transcript}`), processed: false }).eq('id', rowId)
     await sendText(chatId, `🎤 ${transcript}`)
-    await work(db, chatId, message.from!)
+    await work(db, chatId, message.from!, true)
   } catch (err) {
     console.error('voice:', err)
     await db.from('bot_messages').update({ text: '[Голосовое — не удалось распознать]' }).eq('id', rowId)
@@ -183,7 +229,7 @@ async function handlePhoto(db: SupabaseClient, message: TgMessage, image: { file
     if (error) throw error
     const url = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/yacht-photos/${path}`
     await db.from('bot_messages').update({ text: describeIncoming(message, `[Фото ${url}]${caption ? ` ${caption}` : ''}`), processed: false }).eq('id', rowId)
-    await work(db, chatId, message.from!)
+    await work(db, chatId, message.from!, true)
   } catch (err) {
     console.error('photo:', err)
     await db.from('bot_messages').update({ text: '[Фото — не удалось загрузить]' }).eq('id', rowId)
@@ -218,13 +264,17 @@ async function isAdmin(db: SupabaseClient, telegramId: number): Promise<boolean>
   return !!data
 }
 
-/** Forwarded messages become "[Переслано от …]" so the model knows whose request it is. */
+/**
+ * Forwarded messages become "[Переслано от …]" so the model knows whose request it is. The sender's Telegram id
+ * goes in too: it is the only key that survives a changed username, and people.tg_user_id is matched on it.
+ */
 function describeIncoming(message: TgMessage, text: string): string {
   const origin = message.forward_origin
   if (!origin) return text
-  const who = origin.sender_user
-    ? [origin.sender_user.first_name, origin.sender_user.last_name].filter(Boolean).join(' ') + (origin.sender_user.username ? ` (@${origin.sender_user.username})` : '')
-    : origin.sender_user_name ?? origin.chat?.title ?? 'неизвестно (скрыт)'
+  const sender = origin.sender_user
+  const who = sender
+    ? `${[sender.first_name, sender.last_name].filter(Boolean).join(' ')} (${sender.username ? `@${sender.username}, ` : ''}id ${sender.id})`
+    : origin.sender_user_name ? `${origin.sender_user_name} (профиль скрыт)` : origin.chat?.title ?? 'неизвестно (профиль скрыт)'
   const when = new Date(origin.date * 1000).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })
   return `[Переслано от ${who}, ${when}]\n${text}`
 }
@@ -233,7 +283,7 @@ function describeIncoming(message: TgMessage, text: string): string {
  * One worker per chat: answers all unprocessed messages, repeats while new ones keep arriving.
  * Messages are marked processed only after the answer went out, so a killed worker leaves them for the next one.
  */
-async function work(db: SupabaseClient, chatId: number, from: TgUser) {
+async function work(db: SupabaseClient, chatId: number, from: TgUser, admin: boolean) {
   const { data: locked, error: lockError } = await db.rpc('bot_try_lock', { p_chat: chatId })
   if (lockError) {
     console.error('bot_try_lock:', lockError)
@@ -249,7 +299,7 @@ async function work(db: SupabaseClient, chatId: number, from: TgUser) {
       if (error) throw error
 
       if (pending?.length) {
-        await settlePhotos(db, chatId)
+        if (admin) await settlePhotos(db, chatId)
         const { data: settled, error: settledError } = await db.from('bot_messages').select('id').eq('chat_id', chatId).eq('processed', false).order('id')
         if (settledError) throw settledError
         const ids = (settled ?? pending).map((m) => m.id)
@@ -257,7 +307,8 @@ async function work(db: SupabaseClient, chatId: number, from: TgUser) {
         const ctx: Parameters<typeof runAgent>[0] = { db, chatId, adminId: from.id, adminName }
         let reply: string
         try {
-          reply = await runAgent(ctx, ids[ids.length - 1])
+          // Guests get their own agent: different prompt, and tools that cannot read anything private
+          reply = admin ? await runAgent(ctx, ids[ids.length - 1]) : await runGuestAgent({ db, chatId, user: from }, ids[ids.length - 1])
         } catch (err) {
           console.error('agent:', err)
           reply = 'Что-то сломалось, не смог обработать. Попробуйте ещё раз — или переформулируйте.'
@@ -287,7 +338,21 @@ const STATUS_RU: Record<string, string> = { applied: 'применено', cance
 
 async function handleCallback(db: SupabaseClient, cq: NonNullable<TgUpdate['callback_query']>) {
   const answer = (text?: string) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: !!text }).catch(() => {})
-  const [kind, proposalId, decision] = (cq.data ?? '').split(':')
+  const [kind, proposalId, decision, followUpAction] = (cq.data ?? '').split(':')
+  if (kind === 'f' && cq.message) {
+    // Reminder buttons: f:<r|n>:<id>:<3|7|x>
+    if (!(await isAdmin(db, cq.from.id))) return answer('Только для организаторов')
+    try {
+      const outcome = await resolveFollowUp(db, proposalId, decision, followUpAction, cq.from.id)
+      await finishFollowUp(cq.message.chat.id, cq.message.message_id, cq.message.text ?? '', outcome)
+      await answer()
+      await db.from('bot_messages').insert({ chat_id: cq.message.chat.id, role: 'event', text: `Организатор ответил на напоминание «${(cq.message.text ?? '').split('\n')[0]}»: ${outcome}` })
+    } catch (err) {
+      console.error('follow-up callback:', err)
+      await answer('Не получилось, попробуйте ещё раз')
+    }
+    return
+  }
   if (kind !== 'p' || !cq.message || !(decision === 'ok' || decision === 'no')) return answer()
   if (!(await isAdmin(db, cq.from.id))) return answer('Подтверждать могут только организаторы')
 
@@ -306,6 +371,16 @@ async function handleCallback(db: SupabaseClient, cq: NonNullable<TgUpdate['call
     await answer('Ошибка: изменения не применены. Напишите боту, что хотели сделать, — он предложит заново.')
     await db.from('bot_messages').insert({ chat_id: cq.message.chat.id, role: 'event', text: `Нажатие «${decision === 'ok' ? 'Ок' : 'Отмена'}» упало с ошибкой, ничего не применено: ${String(err).slice(0, 300)}` })
   }
+}
+
+/** /start hi[_tag]: no model call — a fixed greeting; the tag stays in the chat as an event the agent will see. */
+async function greetGuest(db: SupabaseClient, chatId: number, tag: string | null) {
+  if (tag) {
+    const text = `${SOURCE_EVENT} «${tag}»`
+    const { data: seen } = await db.from('bot_messages').select('id').eq('chat_id', chatId).eq('role', 'event').eq('text', text).limit(1)
+    if (!seen?.length) await db.from('bot_messages').insert({ chat_id: chatId, role: 'event', text })
+  }
+  await sendText(chatId, 'Привет! Я бот кайт-сафари — недели на яхтах в Красном море с кайтами.\n\nНапиши, что интересует: когда следующий тур, как всё устроено, как попасть. Если хочешь поехать — расскажи, с кем и что важно в каюте, я передам Жене.')
 }
 
 async function sendMiniAppButton(chatId: number, accessCode: string | null) {
