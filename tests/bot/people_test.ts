@@ -64,11 +64,24 @@ try {
   const { data: journal } = await db.from('people_changes').select('field, old_value, new_value, changed_by').eq('request_id', reqs![0].id)
   check('журнал: фраза и срок «было → стало», с автором', journal?.some((j) => j.field === 'state' && j.old_value?.startsWith('Хочет') && j.changed_by === ACTOR) === true && journal?.some((j) => j.field === 'follow_up_at') === true, `${journal?.length} строк`)
 
+  // --- "check the feed first": a known person's fact is not written until the model has seen the feed ----
+  const seen = new Set<string>()
+  const again: RecordInput = { person: person({ id: rostId }), trip_id: trip!.id, note: 'Просит предбронь на май (повтор)', note_remind_at: null, request: null }
+  let gate = await record(db, ACTOR, 'test', again, seen) as any
+  const { count: factsBefore } = await db.from('notes').select('id', { count: 'exact', head: true }).eq('person_id', rostId)
+  check('повтор о знакомом человеке: сначала лента, ничего не записано', gate.nothing_written && gate.recent_facts?.[0]?.text === 'Просит предбронь на май' && gate.open_requests?.length === 1 && factsBefore === 1, JSON.stringify(gate).slice(0, 140))
+  gate = await record(db, ACTOR, 'test', { ...again, note: 'напомнил о себе, ждёт ответа' }, seen) as any
+  const { data: afterPing } = await db.from('requests').select('state').eq('person_id', rostId).single()
+  check('после сверки с лентой запись проходит; «напомнил о себе» не трогает фразу', gate.ok && gate.note_saved && afterPing?.state.startsWith('Закоммитился'), afterPing?.state)
+  gate = await record(db, ACTOR, 'test', { person: person({ name: 'ТЕСТ Новичок Сверкин', confirmed_new: true }), trip_id: null, note: 'первый раз', note_remind_at: null, request: null }, new Set()) as any
+  check('у нового человека сверять нечего — пишется сразу', gate.ok && gate.person.created && gate.note_saved)
+
   // --- identity -----------------------------------------------------------------------------------
   r = await rec({ person: person({ name: 'ТЕСТ Зорро' }), note: 'ещё что-то' })
   check('похожее имя без ника: ничего не записано, вернулись кандидаты', r.nothing_written && r.candidates?.some((c: any) => c.id === rostId), JSON.stringify(r).slice(0, 120))
   const { count: afterCandidates } = await db.from('people').select('id', { count: 'exact', head: true }).like('name', 'ТЕСТ %')
-  check('двойник молча не создан', afterCandidates === 1, `людей ТЕСТ: ${afterCandidates}`)
+  check('двойник молча не создан', afterCandidates === 2, // Зорро и Новичок из проверки выше
+    `людей ТЕСТ: ${afterCandidates}`)
   r = await rec({ person: person({ name: 'ТЕСТ Зорро Другой', confirmed_new: true }), note: 'это другой Зорро' })
   check('confirmed_new создаёт нового при похожих', r.ok && r.person.created && r.person.id !== rostId)
   const otherId = r.person.id
@@ -121,7 +134,7 @@ try {
 
   // --- search, merge, brief -----------------------------------------------------------------------
   const found = await findPeople(db, 'test_zorro_new') as any[]
-  check('поиск: человек с запросами и лентой', found.length === 1 && found[0].requests.length === 3 && found[0].feed.length >= 3, `${found[0]?.requests.length} запр., ${found[0]?.feed.length} фактов`)
+  check('поиск: человек с запросами и лентой', found.length === 1 && found[0].requests.length === 3 && found[0].feed.length >= 4, `${found[0]?.requests.length} запр., ${found[0]?.feed.length} фактов`)
   check('поиск по старому нику (другие написания)', ((await findPeople(db, '@test_zorro')) as any[]).some((p) => p.id === rostId))
 
   await rec({ person: person({ id: otherId }), trip_id: trip!.id, request: { state: 'Дубль: тоже хочет на май', follow_up_at: null, close: false } })

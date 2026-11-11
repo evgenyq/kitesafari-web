@@ -178,12 +178,15 @@ export interface Ctx {
   db: SupabaseClient; chatId: number; adminId: number; adminName: string; cardSent?: boolean; cardPlain?: string
   /** What `record` wrote this turn, one line each: shown under a card, where the model's own text is dropped. */
   recorded?: string[]
+  /** People whose feed the model has seen this turn (search_people, or record's own "check the feed first"). */
+  seenPeople?: Set<string>
 }
 
 /** One line about a `record` call, built from its result — not from what the model says it did. */
 function recordEcho(args: any, result: any): string {
   const asked = args?.person?.name ?? args?.person?.tg_username ?? 'заметка'
   if (result?.error) return `⚠️ Не записал (${asked}): ${result.error}`
+  if (result?.recent_facts) return '' // "check the feed first": not an outcome yet
   if (result?.nothing_written) return `⚠️ Не записал ${asked}: есть похожие люди (${(result.candidates ?? []).map((c: any) => c.name).join(', ')}) — напишите, кто это.`
   if (!result?.person) return `📝 В книжку: ${String(args?.note ?? '').slice(0, 200)}`
   const p = result.person
@@ -245,11 +248,18 @@ async function searchPeople(db: SupabaseClient, query: string): Promise<unknown>
 
 async function runTool(ctx: Ctx, name: string, args: any): Promise<unknown> {
   if (name === 'read_table') return readTable(ctx.db, args)
-  if (name === 'search_people') return searchPeople(ctx.db, args.query ?? '')
+  if (name === 'search_people') {
+    const found = await searchPeople(ctx.db, args.query ?? '') as { people?: { id: string }[] }
+    ctx.seenPeople ??= new Set()
+    for (const p of found.people ?? []) ctx.seenPeople.add(p.id) // their feed is in this result
+    return found
+  }
   const actor = `bot:${ctx.adminId}`
   if (name === 'record') {
-    const result = await record(ctx.db, actor, 'bot', args as RecordInput)
-    ctx.recorded = [...(ctx.recorded ?? []), recordEcho(args, result)]
+    ctx.seenPeople ??= new Set()
+    const result = await record(ctx.db, actor, 'bot', args as RecordInput, ctx.seenPeople)
+    const echo = recordEcho(args, result)
+    if (echo) ctx.recorded = [...(ctx.recorded ?? []), echo]
     return result
   }
   if (name === 'merge_people') return (await directlyAsked(ctx)) ? mergePeople(ctx.db, actor, args.keep_id ?? '', args.drop_id ?? '') : NOT_DIRECT
@@ -362,6 +372,7 @@ function instructions(ctx: Ctx, snapshot: string): string {
 - Тура нет или он не назван («позови на следующий», «когда-нибудь») — trip_id=null. «На май», «на весну» — ближайший подходящий тур из раздела «Туры».
 - Запрос нужен только нерешённым. Человек размещён в каюте и вопросов не осталось, отказался окончательно, неактуально — закрой (close=true) с итоговой фразой. Пока он размещён, но не оплатил или чего-то ждёт — запрос открыт.
 - note — факт в ленту: что человек сказал или что о нём сказали, близко к словам, с датой и источником. Лента только пополняется и остаётся источником правды; фраза запроса и about — выжимка из неё. Пересланное сообщение гостя почти всегда даёт и note, и request.
+- Повторы: перед записью факта о знакомом человеке сверься с его лентой (она приходит в search_people; если ты её не видел, record сначала вернёт последние факты и ничего не запишет). То же сообщение уже записано — не дублируй, ответь «уже есть, с такого-то числа» и напомни фразу запроса. Человек просто напоминает о себе («ну что там?», «есть новости?») — добавь короткий факт «напомнил о себе» с датой, фразу запроса не трогай, а организатору скажи, сколько человек ждёт и на чём остановились.
 - Срок (follow_up_at): человек обещал решить, ответить или оплатить к дате, либо организатор назвал срок — ставь эту дату (время не названо — 10:00 по Москве). Закоммитился, но не оплатил, а срок не назван — поставь через 7 дней и скажи об этом в ответе. Дело ждёт события, а не даты (освободится каюта, откроются продажи) — null.
 - Кто это: человека из раздела «Запросы» указывай по id. Иначе сначала search_people. Если record вернул candidates — ничего не записано: тот же человек — повтори с его id; явно другой (другая фамилия или ник) — повтори с confirmed_new=true; не ясно — спроси организатора. «[Переслано от Имя (@ник, id N), дата]» — передай ник и id; «(профиль скрыт)» — известно только имя, будь осторожнее с совпадениями.
 - Нашёл две записи одного человека — скажи организатору и объединяй (merge_people) только после его «да».

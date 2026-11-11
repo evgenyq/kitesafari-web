@@ -153,8 +153,12 @@ async function resolvePerson(db: SupabaseClient, input: PersonInput, actor: stri
 /**
  * Record what was said: who (found or created), the fact for the feed, and the state of the request.
  * Returns a compact object for the model; `error` / `candidates` mean nothing was written.
+ *
+ * `seen` — people whose feed the model has already been shown this turn. A fact about a known person who is
+ * not in it is not written yet: the call returns the person's latest facts first, so a message forwarded twice
+ * or a plain «ну что там?» is recognised instead of piling up. Callers without a model pass nothing.
  */
-export async function record(db: SupabaseClient, actor: string, source: string, input: RecordInput): Promise<unknown> {
+export async function record(db: SupabaseClient, actor: string, source: string, input: RecordInput, seen?: Set<string>): Promise<unknown> {
   const tripId = blank(input.trip_id)
   if (tripId) {
     if (!UUID.test(tripId)) return { error: 'trip_id должен быть id тура из контекста (или null).' }
@@ -193,6 +197,25 @@ export async function record(db: SupabaseClient, actor: string, source: string, 
     }
   }
   const person = resolved.person
+  if (seen && !resolved.created && !seen.has(person.id) && (note || req)) {
+    seen.add(person.id)
+    const [facts, open] = await Promise.all([
+      db.from('notes').select('text, created_at, created_by, trips(name)').eq('person_id', person.id).order('created_at', { ascending: false }).limit(6),
+      db.from('requests').select('state, follow_up_at, created_at, trips(name)').eq('person_id', person.id).is('closed_at', null),
+    ])
+    if (facts.error) throw facts.error
+    if (facts.data?.length) {
+      return {
+        nothing_written: true,
+        person: { id: person.id, name: person.name, tg_username: person.tg_username },
+        recent_facts: facts.data.map((n: any) => ({ date: n.created_at.slice(0, 10), trip: n.trips?.name ?? null, text: n.text, by: n.created_by })),
+        open_requests: (open.data ?? []).map((r: any) => ({ trip: r.trips?.name ?? 'без тура', since: r.created_at.slice(0, 10), state: r.state, follow_up_at: r.follow_up_at })),
+        hint: 'Сначала сверься с лентой. То же самое уже записано — не записывай, ответь «уже есть, с <дата>». ' +
+          'Человек просто напоминает о себе без новой информации — повтори вызов с коротким note («напомнил о себе, ждёт ответа») и request=null. ' +
+          'Есть новое — повтори вызов как был.',
+      }
+    }
+  }
   const result: Record<string, unknown> = {
     ok: true,
     person: { id: person.id, name: person.name, tg_username: person.tg_username, created: resolved.created, about: person.about },
