@@ -13,11 +13,12 @@ const ACTOR = `bot:${CHAT}`
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 const LOCAL = /127\.0\.0\.1|localhost/.test(Deno.env.get('SUPABASE_URL')!)
 const GUEST = { id: 999000302, first_name: 'ТЕСТ Марина', last_name: 'Гостева', username: 'kstest_marina' }
+const GUEST_NONICK = { id: 999000303, first_name: 'ТЕСТ Гоша', last_name: 'Тихий' } // no username: known to the organiser by name only
 
 const STARTED = new Date().toISOString()
 
 async function cleanPeople() {
-  const { data: people } = await db.from('people').select('id').or(`name.like.ТЕСТ %,tg_username.like.kstest%,tg_user_id.eq.${GUEST.id}`)
+  const { data: people } = await db.from('people').select('id').or(`name.like.ТЕСТ %,tg_username.like.kstest%,tg_user_id.in.(${GUEST.id},${GUEST_NONICK.id})`)
   // The model sometimes drops «ТЕСТ» from a name, and the voice fixture names a real-sounding person:
   // also remove whoever this run's actor wrote about, if the person did not exist before the run
   const { data: touched } = await db.from('notes').select('person_id, people!inner(created_at)').eq('created_by', ACTOR).gte('people.created_at', STARTED)
@@ -38,13 +39,13 @@ async function showPeople() {
   }
 }
 
-async function sayGuest(text: string) {
+async function sayGuest(text: string, guest: { id: number; first_name: string; last_name?: string; username?: string } = GUEST) {
   log(`\n🙋 ${text}`)
-  const { data: row } = await db.from('bot_messages').insert({ chat_id: GUEST.id, role: 'user', text, processed: false }).select('id').single()
+  const { data: row } = await db.from('bot_messages').insert({ chat_id: guest.id, role: 'user', text, processed: false }).select('id').single()
   const before = sent.length
   const t = Date.now()
-  const reply = await runGuestAgent({ db, chatId: GUEST.id, user: GUEST }, row!.id)
-  if (reply) await db.from('bot_messages').insert({ chat_id: GUEST.id, role: 'assistant', text: reply })
+  const reply = await runGuestAgent({ db, chatId: guest.id, user: guest }, row!.id)
+  if (reply) await db.from('bot_messages').insert({ chat_id: guest.id, role: 'assistant', text: reply })
   await db.from('bot_messages').update({ processed: true }).eq('id', row!.id)
   for (const m of sent.slice(before).filter((m) => m.method === 'sendMessage')) log(`📨 ОРГАНИЗАТОРУ:\n${m.body.text.replace(/^/gm, '   ')}`)
   log(`🤖 ${reply.replace(/\n/g, '\n   ')}\n   ⏱ ${((Date.now() - t) / 1000).toFixed(1)}s`)
@@ -160,9 +161,21 @@ try {
   await say('ТЕСТ Филипп Тестов оплатил всё, вопрос закрыт')
   await say('напиши фоллоуап для ТЕСТ Лены Ивановой: продажи открываются 25 ноября')
   await say('напомни мне 20 ноября уточнить у верфи план второй лодки')
+  // A person known by name only: the bot says so; the username arrives later in plain words
+  await say('был разговор с ТЕСТ Гошей Тихим, заинтересовался маем, поедет один')
+  await say('ТЕСТ Вера Ветрова тоже хочет на май, с мужем. её ник @kstest_vera')
   await showPeople()
 
   if (LOCAL) {
+    // …and then that person writes to the bot himself, with no username: the organiser is shown the lookalike
+    const { data: lastEvent } = await db.from('bot_messages').select('id').order('id', { ascending: false }).limit(1)
+    await sayGuest('Привет! Женя рассказывал про майское сафари, хочу поехать, я один, каюта любая', GUEST_NONICK)
+    const { data: admins0 } = await db.from('admin_users').select('telegram_id').eq('notify', true)
+    const { data: relayed } = await db.from('bot_messages').select('text').eq('chat_id', admins0![0].telegram_id).eq('role', 'event').gt('id', lastEvent![0].id).order('id')
+    for (const e of relayed ?? []) await db.from('bot_messages').insert({ chat_id: CHAT, role: 'event', text: e.text })
+    await say('да, это он, объедини')
+    await showPeople()
+
     // Replaces the trip's real brief, so never on the live database
     await say('справка для гостей на май: запись откроется 25 ноября, сначала старичкам; половинка примерно 1700–1900, целая каюта 3600–4200, плюс около 550 оргсбор на месте; две лодки')
     await db.from('bot_messages').insert({ chat_id: GUEST.id, role: 'event', text: 'Гость пришёл по ссылке с меткой «guild»' })
@@ -219,9 +232,9 @@ try {
   await cleanPeople()
   const peopleRestored = await restorePeople()
   log(`\n🧹 людей и запросов возвращено как было: ${peopleRestored}`)
-  await db.from('notes').delete().in('created_by', [ACTOR, `guest:${GUEST.id}`])
-  await db.from('bot_messages').delete().eq('chat_id', GUEST.id)
-  await db.from('bot_runs').delete().eq('chat_id', GUEST.id)
+  await db.from('notes').delete().in('created_by', [ACTOR, `guest:${GUEST.id}`, `guest:${GUEST_NONICK.id}`])
+  await db.from('bot_messages').delete().in('chat_id', [GUEST.id, GUEST_NONICK.id])
+  await db.from('bot_runs').delete().in('chat_id', [GUEST.id, GUEST_NONICK.id])
   if (LOCAL) {
     await db.from('bot_messages').delete().eq('role', 'event').like('text', '%ТЕСТ %')
     await db.from('notes').delete().eq('source', 'guest_brief').eq('created_by', ACTOR)

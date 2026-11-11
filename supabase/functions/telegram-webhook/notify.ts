@@ -10,7 +10,7 @@ import { tg } from '../_shared/telegram.ts'
 export const FROM_OUTSIDE = '[от гостя] '
 
 /** Send to every admin who takes notifications, and leave an event in their chat so the bot knows what it sent. */
-export async function notifyAdmins(db: SupabaseClient, message: string, event: string, extra: Record<string, unknown> = {}): Promise<number> {
+export async function notifyAdmins(db: SupabaseClient, message: string, event: string, extra: Record<string, unknown> = {}, botNote?: string): Promise<number> {
   const { data: admins, error } = await db.from('admin_users').select('telegram_id').eq('notify', true)
   if (error) throw error
   let sent = 0
@@ -18,6 +18,8 @@ export async function notifyAdmins(db: SupabaseClient, message: string, event: s
     try {
       await tg('sendMessage', { chat_id: admin.telegram_id, text: message.slice(0, 4000), ...extra })
       await db.from('bot_messages').insert({ chat_id: admin.telegram_id, role: 'event', text: event.slice(0, 2000) })
+      // What the bot itself worked out (ids, possible matches) goes in a separate event: `event` may be an outsider's words
+      if (botNote) await db.from('bot_messages').insert({ chat_id: admin.telegram_id, role: 'event', text: botNote.slice(0, 2000) })
       sent++
     } catch (err) {
       console.error('notify admin', admin.telegram_id, err)

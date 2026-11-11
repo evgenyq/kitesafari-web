@@ -219,6 +219,8 @@ export async function record(db: SupabaseClient, actor: string, source: string, 
   const result: Record<string, unknown> = {
     ok: true,
     person: { id: person.id, name: person.name, tg_username: person.tg_username, created: resolved.created, about: person.about },
+    // No username and no Telegram id: the person can only be recognised by name next time
+    ...(person.tg_username || person.tg_user_id ? {} : { no_contact: true }),
   }
 
   if (req) {

@@ -13,7 +13,7 @@ const db = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 const LOCAL = /127\.0\.0\.1|localhost/.test(url)
 const ADMIN = 999000113
 const ACTOR = `bot:${ADMIN}`
-const TG_A = 999000201, TG_GUEST = 999000202
+const TG_A = 999000201, TG_GUEST = 999000202, TG_NONICK = 999000203
 
 const sent: { method: string; body: any }[] = []
 let nextId = 7000
@@ -29,16 +29,16 @@ const person = (over: Partial<NonNullable<RecordInput['person']>>) => ({ id: nul
 const rec = (input: Partial<RecordInput>) => record(db, ACTOR, 'test', { person: null, trip_id: null, note: null, note_remind_at: null, request: null, ...input }) as Promise<any>
 
 async function cleanup() {
-  const { data: people } = await db.from('people').select('id').or('name.like.ТЕСТ %,tg_user_id.in.(999000201,999000202)')
+  const { data: people } = await db.from('people').select('id').or('name.like.ТЕСТ %,tg_user_id.in.(999000201,999000202,999000203)')
   const ids = (people ?? []).map((p) => p.id)
   if (ids.length) {
     await db.from('notes').delete().in('person_id', ids)
     await db.from('people_changes').delete().in('person_id', ids)
     await db.from('people').delete().in('id', ids) // requests go with them (cascade)
   }
-  await db.from('notes').delete().in('created_by', [ACTOR, `guest:${TG_GUEST}`])
+  await db.from('notes').delete().in('created_by', [ACTOR, `guest:${TG_GUEST}`, `guest:${TG_NONICK}`])
   await db.from('trips').delete().eq('access_code', 'test-people-delete')
-  await db.from('bot_messages').delete().in('chat_id', [TG_GUEST])
+  await db.from('bot_messages').delete().in('chat_id', [TG_GUEST, TG_NONICK])
   await db.from('bot_runs').delete().in('chat_id', [TG_GUEST])
   if (LOCAL) await db.from('bot_messages').delete().eq('role', 'event').or('text.like.%ТЕСТ %,text.like.%тест-напоминание%')
 }
@@ -84,6 +84,7 @@ try {
     `людей ТЕСТ: ${afterCandidates}`)
   r = await rec({ person: person({ name: 'ТЕСТ Зорро Другой', confirmed_new: true }), note: 'это другой Зорро' })
   check('confirmed_new создаёт нового при похожих', r.ok && r.person.created && r.person.id !== rostId)
+  check('человек без ника и id помечен no_contact, с ником — нет', r.no_contact === true && (await rec({ person: person({ id: rostId }), note: 'x' })).no_contact === undefined)
   const otherId = r.person.id
 
   r = await rec({ person: person({ name: 'Zorro Ts', tg_username: 'test_zorro', tg_user_id: TG_A }), note: 'переслано с id' })
@@ -212,6 +213,22 @@ try {
 
     for (let i = 0; i < 4; i++) g = await tellOrganizer(gctx, { kind: 'question', trip_id: null, text: `ещё вопрос ${i}` })
     check('дневной лимит передач организатору', !!g.error, g.error)
+    // A guest the organisers know by name only: not merged silently, the organiser is shown the lookalike
+    const known = await rec({ person: person({ name: 'ТЕСТ Вася Безников', confirmed_new: true }), trip_id: trip!.id, note: 'был разговор', request: { state: 'ТЕСТ заинтересовался маем после разговора', follow_up_at: null, close: false } })
+    await rec({ person: person({ name: 'ТЕСТ Вася Другов', confirmed_new: true }), note: 'тёзка по имени' })
+    const nonick = { db, chatId: TG_NONICK, user: { id: TG_NONICK, first_name: 'ТЕСТ Вася', last_name: 'Безников' } }
+    before = sent.length
+    g = await tellOrganizer(nonick, { kind: 'application', trip_id: trip!.id, text: 'Хочет на май, один' }) as any
+    const alert = sent.slice(before).find((m) => m.method === 'sendMessage')?.body.text ?? ''
+    const { data: vasyas } = await db.from('people').select('id, tg_user_id').like('name', 'ТЕСТ Вася Безников%')
+    const { data: botNote } = await db.from('bot_messages').select('text').eq('role', 'event').like('text', 'Новый контакт ТЕСТ Вася%').order('id', { ascending: false }).limit(1)
+    check('гость без ника, записанный раньше по имени: не слит молча, показан похожий, тёзка по одному имени — нет', g.ok && vasyas?.length === 2 && alert.includes('Возможно, он уже записан без ника') && alert.includes('ТЕСТ заинтересовался маем') && alert.includes('объедини') && !alert.includes('Другов'), alert.slice(-160))
+    check('боту оставлены настоящие id для слияния', !!botNote?.[0]?.text.includes(known.person.id) && botNote[0].text.includes('merge_people'))
+    const newId = vasyas!.find((p) => p.id !== known.person.id)!.id
+    const mergedGuest = await mergePeople(db, ACTOR, known.person.id, newId) as any
+    const { data: vasyaReqs } = await db.from('requests').select('state').eq('person_id', known.person.id).is('closed_at', null)
+    check('после «объедини»: одна запись, Telegram-ID гостя перешёл к ней, запрос один', mergedGuest.ok && Number(mergedGuest.person.tg_user_id) === TG_NONICK && vasyaReqs?.length === 1 && vasyaReqs[0].state.startsWith('ТЕСТ заинтересовался'), JSON.stringify(vasyaReqs))
+
     // The guest's view: no brief — sales "not open"; with a brief — yes/no on places, never names
     await rec({ person: person({ name: 'ТЕСТ Секретный Гость', confirmed_new: true }), trip_id: trip!.id, note: 'ТЕСТ тянет с оплатой', request: { state: 'ТЕСТ должен 1800', follow_up_at: null, close: false } })
     const { data: briefBackup } = await db.from('notes').select('id').eq('trip_id', trip!.id).eq('source', 'guest_brief').eq('status', 'open')

@@ -8,7 +8,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0
 import { agentLoop } from './agent.ts'
 import { FAQ } from './faq.ts'
 import { FROM_OUTSIDE, notifyAdmins } from './notify.ts'
-import { GUEST_BRIEF, livesIn, normUsername, STATE_MAX } from './people.ts'
+import { GUEST_BRIEF, livesIn, normUsername, similarPeople, STATE_MAX } from './people.ts'
 
 export interface GuestCtx { db: SupabaseClient; chatId: number; user: { id: number; first_name: string; last_name?: string; username?: string } }
 
@@ -43,7 +43,10 @@ const TOOLS = [
 const fullName = (u: GuestCtx['user']) => [u.first_name, u.last_name].filter(Boolean).join(' ')
 
 /** Find or create the person behind this Telegram account. The id comes from Telegram itself, so no guessing. */
-async function guestPerson(db: SupabaseClient, user: GuestCtx['user'], actor: string): Promise<{ id: string; name: string; created: boolean; boundByUsername?: boolean }> {
+type Lookalike = { id: string; name: string; note: string }
+type GuestPerson = { id: string; name: string; created: boolean; boundByUsername?: boolean; lookalikes?: Lookalike[] }
+
+async function guestPerson(db: SupabaseClient, user: GuestCtx['user'], actor: string): Promise<GuestPerson> {
   const username = normUsername(user.username)
   const { data: byId, error } = await db.from('people').select('id, name, tg_username, aliases').eq('tg_user_id', user.id).maybeSingle()
   if (error) throw error
@@ -69,7 +72,21 @@ async function guestPerson(db: SupabaseClient, user: GuestCtx['user'], actor: st
     .insert({ name: fullName(user) || username || `Telegram ${user.id}`, tg_username: username, tg_user_id: user.id })
     .select('id, name').single()
   if (insertError) throw insertError
-  return { id: created.id, name: created.name, created: true }
+
+  // Someone the organisers wrote down by name only (hidden profile, «был разговор с Васей») may be this very
+  // person. Never merged silently — a name is not proof; the organiser is shown the lookalikes and decides.
+  // A shared first name alone is not a lookalike: every word of the Telegram name must be in the record
+  const words = fullName(user).toLowerCase().split(/\s+/).filter((w) => w.length >= 2)
+  const matches = (p: { name: string; aliases: string | null }) => words.filter((w) => `${p.name} ${p.aliases ?? ''}`.toLowerCase().includes(w)).length
+  const similar = (await similarPeople(db, fullName(user), null, created.id))
+    .filter((p) => !p.tg_user_id && !p.tg_username && words.length > 0 && matches(p) === words.length).slice(0, 3)
+  if (!similar.length) return { id: created.id, name: created.name, created: true }
+  const { data: open } = await db.from('requests').select('person_id, state, created_at, trips(name)').in('person_id', similar.map((p) => p.id)).is('closed_at', null)
+  const lookalikes = similar.map((p) => {
+    const r = ((open ?? []) as any[]).find((x) => x.person_id === p.id)
+    return { id: p.id, name: p.name, note: r ? `${r.trips?.name ?? 'без тура'}, с ${new Date(r.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}: ${r.state}` : p.about ?? 'запросов нет' }
+  })
+  return { id: created.id, name: created.name, created: true, lookalikes }
 }
 
 export async function tellOrganizer(ctx: GuestCtx, args: { kind: string; trip_id: string | null; text: string }): Promise<unknown> {
@@ -113,8 +130,15 @@ export async function tellOrganizer(ctx: GuestCtx, args: { kind: string; trip_id
 
   const who = `${person.name}${user.username ? ` (@${user.username})` : ''}`
   const bound = person.boundByUsername ? `\n⚠️ Узнал по нику: в базе это «${person.name}», в Telegram — «${fullName(user)}». Если это другой человек, скажите.` : ''
-  const message = `${KIND_RU[args.kind]} — ${who}${person.created ? ', новый контакт' : ''}\nТур: ${tripName}${source ? `\nСсылка: ${source}` : ''}\n\n${text}${requestNote}${bound}`
-  const sent = await notifyAdmins(db, message, `${FROM_OUTSIDE}${who} написал боту сам. ${noteText}. Тур: ${tripName}.`)
+  const same = person.lookalikes?.length
+    ? `\n\n👥 Возможно, он уже записан без ника:\n${person.lookalikes.map((l) => `• ${l.name} — ${l.note}`).join('\n')}\nЕсли это тот же человек — ответьте «объедини», записи сольются.`
+    : ''
+  const botNote = person.lookalikes?.length
+    ? `Новый контакт ${who} [id ${person.id}] похож на уже записанных без ника: ${person.lookalikes.map((l) => `${l.name} [id ${l.id}]`).join('; ')}. ` +
+      `Если организатор подтвердит, что это один человек: merge_people(keep_id = старая запись, drop_id = ${person.id}).`
+    : undefined
+  const message = `${KIND_RU[args.kind]} — ${who}${person.created ? ', новый контакт' : ''}\nТур: ${tripName}${source ? `\nСсылка: ${source}` : ''}\n\n${text}${requestNote}${bound}${same}`
+  const sent = await notifyAdmins(db, message, `${FROM_OUTSIDE}${who} написал боту сам. ${noteText}. Тур: ${tripName}.`, {}, botNote)
   if (!sent) console.error('guest hand-off: no admin got the notification', actor)
   return { ok: true, hint: 'Записано и передано. Скажи человеку коротко, что записал и организатор ответит сам.' }
 }
